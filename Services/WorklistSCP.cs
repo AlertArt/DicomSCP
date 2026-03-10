@@ -534,7 +534,42 @@ public class WorklistSCP : DicomService, IDicomServiceProvider, IDicomCFindProvi
         var today = DateTime.Now.ToString("yyyyMMdd");
         string startDate, endDate;
 
-        if (dataset.Contains(DicomTag.ScheduledProcedureStepStartDate))
+        // 先读标准 Sequence
+        var spsSeq = dataset.GetSequence(DicomTag.ScheduledProcedureStepSequence);
+
+        if (spsSeq != null && spsSeq.Items.Count > 0)
+        {
+            var sps = spsSeq.Items[0];
+
+            if (sps.Contains(DicomTag.ScheduledProcedureStepStartDate))
+            {
+                var date = sps.GetString(DicomTag.ScheduledProcedureStepStartDate);
+                ParseDateRange(date, out var fromDate, out var toDate);
+
+                startDate = fromDate;
+                endDate = toDate;
+
+                //时间全为null
+                if(startDate == null && endDate == null)
+                {
+                    startDate = today;
+                    endDate = today;
+                    DicomLogger.Debug("WorklistSCP", "日期处理: 无效日期, 使用今天: {Today}", today);
+                }
+                else
+                {
+                    DicomLogger.Debug("WorklistSCP", "日期处理: 有效日期={ValidDates}, 选择的日期范围: {StartDate} - {EndDate}", date, startDate, endDate);
+                }
+            }
+            else
+            {
+                startDate = today;
+                endDate = today;
+                DicomLogger.Debug("WorklistSCP", "ScheduledProcedureStepSequence不包含日期, 使用今天: {Today}", today);
+            }
+        }
+        //兼容根Tag
+        else if (dataset.Contains(DicomTag.ScheduledProcedureStepStartDate))
         {
             var dateElement = dataset.GetDicomItem<DicomElement>(DicomTag.ScheduledProcedureStepStartDate);
             var values = dateElement?.Get<string[]>() ?? Array.Empty<string>();
@@ -574,14 +609,29 @@ public class WorklistSCP : DicomService, IDicomServiceProvider, IDicomCFindProvi
             // 没有传日期参数，使用过去30天到未来30天的范围
             startDate = DateTime.Now.AddDays(-30).ToString("yyyyMMdd");
             endDate = DateTime.Now.AddDays(30).ToString("yyyyMMdd");
-            DicomLogger.Debug("WorklistSCP", "日期处理: 未传日期, 使用默认范围: {StartDate} - {EndDate}", 
-                startDate, endDate);
+            DicomLogger.Debug("WorklistSCP", "日期处理: 未传日期, 使用默认范围: {StartDate} - {EndDate}", startDate, endDate);
         }
 
         var dateRange = (StartDate: startDate, EndDate: endDate);
-        DicomLogger.Information("WorklistSCP", "最终查询日期范围: {StartDate} - {EndDate}", 
-            dateRange.StartDate, dateRange.EndDate);
+        DicomLogger.Information("WorklistSCP", "最终查询日期范围: {StartDate} - {EndDate}", dateRange.StartDate, dateRange.EndDate);
         return dateRange;
+    }
+
+    private static void ParseDateRange(string value, out string? from, out string? to)
+    {
+        from = null;
+        to = null;
+
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        var parts = value.Split('-');
+
+        if (!string.IsNullOrEmpty(parts[0]))
+            from = parts[0];
+
+        if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]))
+            to = parts[1];
     }
 
     public Task<DicomCEchoResponse> OnCEchoRequestAsync(DicomCEchoRequest request)

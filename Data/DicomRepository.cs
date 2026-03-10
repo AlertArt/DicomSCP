@@ -799,9 +799,9 @@ public class DicomRepository : BaseRepository, IDisposable
                 AND (@PatientId = '' OR PatientId LIKE @PatientId)
                 AND (@PatientName = '' OR PatientName LIKE @PatientName)
                 AND (@AccessionNumber = '' OR AccessionNumber LIKE @AccessionNumber)
-                AND (@StartDate = '' OR @EndDate = '' OR 
-                     substr(ScheduledDateTime, 1, 8) >= @StartDate AND 
-                     substr(ScheduledDateTime, 1, 8) <= @EndDate)
+                AND ((@StartDate = '' OR substr(ScheduledDateTime,1,8) >= @StartDate)
+                     AND
+                    (@EndDate = '' OR substr(ScheduledDateTime,1,8) <= @EndDate))
                 AND (@Modality = '' OR Modality = @Modality)
                 AND (@ScheduledStationName = '' OR ScheduledStationName = @ScheduledStationName)
                 AND Status = 'SCHEDULED'
