@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using DicomSCP.Models;
-using DicomSCP.Data;
+using DicomSCP.Repository;
 using DicomSCP.Services;
 using FellowOakDicom;
 using FellowOakDicom.Imaging.Codec;
@@ -12,15 +12,18 @@ namespace DicomSCP.Controllers;
 public class ImagesController : ControllerBase
 {
     private readonly DicomRepository _repository;
+    private readonly StudyBasicInfoRepository _studyBasicInfoRepository;
     private readonly IConfiguration _configuration;
     private readonly IWebHostEnvironment _environment;
 
     public ImagesController(
-        DicomRepository repository, 
+        DicomRepository repository,
+        StudyBasicInfoRepository studyBasicInfoRepository,
         IConfiguration configuration,
         IWebHostEnvironment environment)
     {
         _repository = repository;
+        _studyBasicInfoRepository = studyBasicInfoRepository;
         _configuration = configuration;
         _environment = environment;
 
@@ -39,6 +42,7 @@ public class ImagesController : ControllerBase
         [FromQuery] string? patientId = null,
         [FromQuery] string? patientName = null,
         [FromQuery] string? accessionNumber = null,
+        [FromQuery] string? keyword = null,
         [FromQuery] string? modality = null,
         [FromQuery] string? studyDate = null)
     {
@@ -54,12 +58,13 @@ public class ImagesController : ControllerBase
                 }
             }
 
-            var result = await _repository.GetStudiesAsync(
+            var result = await _studyBasicInfoRepository.GetStudiesAsync(
                 page, 
                 pageSize, 
                 patientId, 
                 patientName, 
                 accessionNumber, 
+                keyword,
                 modality, 
                 searchDate,    // 开始时间
                 searchDate?.AddDays(1).AddSeconds(-1)  // 结束时间设为当天最后一秒
@@ -78,7 +83,7 @@ public class ImagesController : ControllerBase
     {
         try
         {
-            var seriesList = await _repository.GetSeriesByStudyUidAsync(studyUid);
+            var seriesList = await _studyBasicInfoRepository.GetSeriesByStudyUidAsync(studyUid);
             var result = seriesList.Select(series => new SeriesInfo
             {
                 SeriesInstanceUid = series.SeriesInstanceUid,
@@ -135,7 +140,7 @@ public class ImagesController : ControllerBase
                     DicomLogger.Information("Api", "删除检查目录成功 - 路径: {Path}", studyPath);
 
                     // 3. 删除数据库记录
-                    await _repository.DeleteStudyAsync(studyInstanceUid);
+                    await _studyBasicInfoRepository.DeleteStudyAsync(studyInstanceUid);
 
                     return Ok(new { message = "删除成功" });
                 }
@@ -148,7 +153,7 @@ public class ImagesController : ControllerBase
             else
             {
                 // 如果目录不存在，只删除数据库记录
-                await _repository.DeleteStudyAsync(studyInstanceUid);
+                await _studyBasicInfoRepository.DeleteStudyAsync(studyInstanceUid);
                 DicomLogger.Warning("Api", "检查目录不存在 - 路径: {Path}", studyPath);
                 return Ok(new { message = "删除成功" });
             }
@@ -157,6 +162,31 @@ public class ImagesController : ControllerBase
         {
             DicomLogger.Error("Api", ex, "[API] 删除检查失败 - StudyUID: {StudyUID}", studyInstanceUid);
             return StatusCode(500, new { error = "删除失败，请重试" });
+        }
+    }
+
+    [HttpPut("{studyInstanceUid}")]
+    public async Task<IActionResult> UpdateStudy(string studyInstanceUid, [FromBody] StudyUpdateRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(studyInstanceUid))
+        {
+            return BadRequest("StudyInstanceUID is required");
+        }
+
+        try
+        {
+            var ok = await _studyBasicInfoRepository.UpdateStudyBasicInfoAsync(studyInstanceUid, request);
+            if (!ok)
+            {
+                return BadRequest("No fields to update");
+            }
+
+            return Ok(new { Message = "更新成功" });
+        }
+        catch (Exception ex)
+        {
+            DicomLogger.Error("Api", ex, "[API] 更新检查信息失败 - StudyInstanceUID: {StudyInstanceUid}", studyInstanceUid);
+            return StatusCode(500, "更新失败");
         }
     }
 

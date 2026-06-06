@@ -4,13 +4,14 @@ using Serilog;
 using Serilog.Events;
 using DicomSCP.Configuration;
 using DicomSCP.Services;
-using DicomSCP.Data;
+using DicomSCP.Repository;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
 using System.Runtime.InteropServices;
 using Microsoft.AspNetCore.Rewrite;
+using DicomSCP.Middlewares;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -74,27 +75,11 @@ var logSettings = builder.Configuration
 DicomLogger.Initialize(logSettings);
 
 // 初始化数据库日志
-BaseRepository.ConfigureLogging(logSettings);
-
-// 初始化API日志
-ApiLoggingMiddleware.ConfigureLogging(logSettings);
+BaseRepository.ConfigureLogging();
 
 // 配置框架日志
 var logConfig = new LoggerConfiguration()
     .MinimumLevel.Warning()  // 只记录警告以上的日志
-    .Filter.ByExcluding(e => 
-        e.Properties.ContainsKey("SourceContext") && 
-        e.Properties["SourceContext"].ToString().Contains("FellowOakDicom.Network") &&
-        (e.MessageTemplate.Text.Contains("No accepted presentation context found") ||
-         e.MessageTemplate.Text.Contains("Study Root Query/Retrieve Information Model - FIND") ||
-         e.MessageTemplate.Text.Contains("Patient Root Query/Retrieve Information Model - FIND") ||
-         e.MessageTemplate.Text.Contains("Storage Commitment Push Model SOP Class") ||
-         e.MessageTemplate.Text.Contains("Modality Performed Procedure Step") ||
-         e.MessageTemplate.Text.Contains("Basic Grayscale Print Management Meta") ||
-         e.MessageTemplate.Text.Contains("Basic Color Print Management Meta") ||
-         e.MessageTemplate.Text.Contains("Verification SOP Class") ||
-         e.MessageTemplate.Text.Contains("rejected association") ||
-         e.MessageTemplate.Text.Contains("Association received")))
     .WriteTo.Logger(lc => lc
         .WriteTo.Console(
             outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{SourceContext}] {Message:l}{NewLine}",
@@ -133,6 +118,10 @@ builder.Services
     .AddTranscoderManager<NativeTranscoderManager>();
 
 builder.Services.AddSingleton<DicomRepository>();
+builder.Services.AddSingleton<StudyBasicInfoRepository>();
+builder.Services.AddSingleton<PrintRepository>();
+builder.Services.AddSingleton<UserRepository>();
+builder.Services.AddSingleton<DicomDatasetPersistence>();
 builder.Services.AddSingleton<DicomServer>();
 builder.Services.AddSingleton<WorklistRepository>();
 builder.Services.AddSingleton<IStoreSCU, StoreSCU>();
@@ -209,7 +198,6 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.KnownProxies.Clear();
 });
 
-// 在 ConfigureServices 部分添加
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", 
@@ -232,26 +220,29 @@ var rewriteOptions = new RewriteOptions()
 
 var app = builder.Build();
 
-// 初始化服务提供者
-DicomServiceProvider.Initialize(app.Services);
+// 启动时初始化数据库结构（建表 + 字段迁移）
+var connectionString = builder.Configuration.GetConnectionString("DicomDb")
+    ?? throw new ArgumentException("Missing DicomDb connection string");
+var isFirstInitialization = await DatabaseInitializer.InitializeAsync(connectionString);
+if (isFirstInitialization)
+{
+    DicomLogger.Information("Database", "[DB] 数据库表首次初始化完成");
+}
 
-// 获取服务
-var dicomRepository = app.Services.GetRequiredService<DicomRepository>();
+var dicomPersistence = app.Services.GetRequiredService<DicomDatasetPersistence>();
 
-// 配置 DICOM
+// 配置 DICOM（启用跳过验证以兼容部分非标准数据）
+new DicomSetupBuilder()
+    .SkipValidation()
+    .Build();
 DicomSetupBuilder.UseServiceProvider(app.Services);
 
-CStoreSCP.Configure(settings, dicomRepository);
+CStoreSCP.Configure(settings, dicomPersistence);
 
 // 启动 DICOM 服务器
 var dicomServer = app.Services.GetRequiredService<DicomServer>();
 await dicomServer.StartAsync();
 app.Lifetime.ApplicationStopping.Register(() => dicomServer.StopAsync().GetAwaiter().GetResult());
-
-// 优化线程池 - 基于CPU核心数
-int processorCount = Environment.ProcessorCount;
-ThreadPool.SetMinThreads(processorCount * 4, processorCount * 2);    // 最小线程数
-ThreadPool.SetMaxThreads(processorCount * 8, processorCount * 4);    // 最大线程数
 
 // 1. 转发头中间件（最先）
 app.UseForwardedHeaders();
@@ -324,12 +315,12 @@ app.Lifetime.ApplicationStarted.Register(() =>
     
     // 提取端口号
     var port = "5000";
-    if (httpUrl.Contains(":"))
+    if (httpUrl.Contains(':'))
     {
         var parts = httpUrl.Split(':');
         if (parts.Length >= 3)
         {
-            port = parts[parts.Length - 1];
+            port = parts[^1];
         }
     }
     

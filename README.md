@@ -1,20 +1,47 @@
-## 中文开源社区最完善、集成度最高的医学影像轻量级PACS系统
+## 🏆 中文开源社区高完成度的 DICOM / PACS 基础服务组件
 
-- 基于 .NET Core 的 DICOM SCP（Service Class Provider）服务器，提供 DICOM 存储、工作列表、查询检索服务，打印服务，WADO/DicomWeb服务，集成了功能强大的DICOM 桌面和Web查看器。
-- 推荐使用 [Docker部署](#docker部署) 有推送会自动发布镜像。最新版本可以自行拉取dev分支构建，windows发行版不定期发布。
-- 项目用爱发电，作者多年医学影像从业者，旨在为中文医学影像提供一个免费的轻量级PACS解决方案。仅供大家学习参考，不限制使用，请遵守[MIT许可协议](LICENSE)。
-- 另有完整商业版云RIS/PACS（区域云影像）和云胶片（数字胶片）解决方案助力紧密型医共体和医保影像云，有相关需求可以联系咨询！ 微信/QQ同号：30760655
-- PS:商业版是云RIS/PACS整体解决方案。开源的DicomSCP是一个集合了DICOM相关服务的管理系统，可以理解它是解决方案里面一个微服务的demo。
-- 团队亦承接医院相关系统的定制开发和接口对接改造，有需求也可联系。
+<p>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License" /></a>
+  <a href="https://dotnet.microsoft.com/"><img src="https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet" alt=".NET" /></a>
+  <a href="https://github.com/fightroad/DicomSCP/releases/latest"><img src="https://img.shields.io/github/v/release/fightroad/DicomSCP?label=Version&logo=github&color=blue" alt="Version" /></a>
+  <a href="https://gitee.com/fightroad/DicomSCP"><img src="https://gitee.com/fightroad/DicomSCP/badge/star.svg?theme=white" alt="Gitee Stars" /></a>
+  <a href="https://gitee.com/fightroad/DicomSCP"><img src="https://img.shields.io/badge/Gitee-Main%20Repo-C71D23" alt="Gitee Main Repo" /></a>
+  <a href="https://github.com/fightroad/DicomSCP"><img src="https://img.shields.io/github/stars/fightroad/DicomSCP?label=GitHub%20Stars&logo=github&color=181717" alt="GitHub Stars" /></a>
+  <a href="https://github.com/fightroad/DicomSCP"><img src="https://img.shields.io/badge/GitHub-Mirror-181717?logo=github" alt="GitHub Mirror" /></a>
+  <a href="https://gitee.com/fightroad/DicomSCP"><img src="https://visitor-badge.laobi.icu/badge?page_id=gitee-fightroad-DicomSCP" alt="Visitors" /></a>
+</p>
+
+**快速入口**：[`快速开始`](#快速开始) | [`Docker部署`](#docker部署) | [`配置说明`](#配置说明) | [`商业咨询（微信/QQ：30760655）`](#commercial-consult)
+
+> 关键词：开源 DICOM SCP、轻量级 PACS、DICOMWeb（WADO-RS / QIDO-RS）、Worklist、Query/Retrieve、医学影像系统集成。
+
+- DicomSCP 是一个基于 .NET Core 的 DICOM 医学影像基础服务组件，提供轻量级 PACS 核心能力，可用于 DICOM 接入、影像存储、查询检索与系统集成。
+- 本项目由多年医学影像从业经验积累而来，旨在为中文医学影像生态提供一个轻量、开放、可扩展的 DICOM/PACS 基础设施实现。不限制使用，请遵守[MIT许可协议](LICENSE)。如果项目对您有帮助，欢迎[赞助](#赞助项目)支持我们继续改进！
+- 提供完整商业版云RIS/PACS（区域云影像）和云胶片（数字胶片）解决方案助力紧密型医共体和医保影像云，亦可提供医疗信息化相关的定制开发和接口改造服务，有相关需求可以联系咨询！ 微信/QQ：30760655
+- 相关配套子系统介绍：[dicom-acquisition](https://gitee.com/fightroad/dicom-acquisition) | [dicom-server](https://gitee.com/fightroad/dicom-server) | [data-integration-engine](https://gitee.com/fightroad/data-integration-engine)
+- 测试工具（用于联调与传输测试）：[pacs-explorer](https://gitee.com/fightroad/pacs-explorer) | [mini-scu](https://gitee.com/fightroad/mini-scu) | [DicomTransfer](https://gitee.com/fightroad/DicomTransfer) | [DicomStoreScp](https://gitee.com/fightroad/DicomStoreScp) | [DicomProxy_Viewer](https://gitee.com/fightroad/DicomProxy_Viewer)
 - [项目Gitee仓库](https://gitee.com/fightroad/DicomSCP)  |  [项目GitHub仓库](https://github.com/fightroad/DicomSCP) 
 
-## 整体解决方案部分功能预览
-![后台管理](about/后台管理.png)
+<a id="commercial-consult"></a>
+## 🔗 开源 vs 商业版本
+
+| 维度 | DicomSCP（开源） | 商业解决方案 |
+|------|------------------|--------------|
+| 定位 | DICOM/PACS 基础服务组件 | 医疗影像完整业务系统 |
+| 面向对象 | 开发者 / 研究人员 / AI团队 | 医院 / 医疗企业 / 集成商 |
+| 目标用途 | 技术学习 / PoC验证 / 系统联调 | 生产环境部署 / 业务系统建设 |
+| 覆盖范围 | DICOM核心服务能力（SCP / Worklist / Query / WADO等） | RIS + PACS + 云影像 + 云胶片 + 系统集成 |
+| 系统形态 | 独立基础服务组件 | 完整医疗影像业务平台 |
+| 部署方式 | Docker / 本地快速运行 | 私有化部署 / 多院区架构 / 云平台部署 |
+| 维护模式 | 社区维护（开源） | 项目制交付 + 定制支持 |
+| 扩展能力 | 提供基础接口与协议实现 | 支持医院系统对接（HIS / EMR / AI影像平台） |
+
+
+## 商业解决方案部分预览
 ![商业ris](about/商业报告.png)
 ![Risreport](about/risreport.png)
-![CloudFilm](about/cloudfilm.png)
+![DicomServer](about/DicomServer.png)
 ![viewer](about/report.png) ![viewer](about/mobileviewer.png)
-![Dicomserver](about/DicomServer.png)
 
 
 ## 赞助项目
@@ -124,8 +151,6 @@
 - **WADO-RS 服务 (Web Access to DICOM Objects - RESTful Services)**
   - 实例检索 (Instance Retrieval)
     ```
-    GET /dicomweb/studies/{studyUID}
-    GET /dicomweb/studies/{studyUID}/series/{seriesUID}
     GET /dicomweb/studies/{studyUID}/series/{seriesUID}/instances/{instanceUID}
     ```
     - 支持原始 DICOM 格式检索
@@ -216,16 +241,16 @@
 
 ## 系统要求
 
-- Windows 10/11 或 Windows Server 2016+
+- Windows 10/11 或 Windows Server 2012+
 - .NET 8.0 或更高版本
 - SQLite 3.x
 - 8GB+ RAM
-- 40GB+ 可用磁盘空间
+- 100GB+ 可用磁盘空间
 - 现代浏览器（Chrome/Firefox/Edge）
 
 ## 构建和发布
 
-### Windows 单文件发布
+Windows 单文件发布
 
 发布为自包含的单文件可执行程序：
 
@@ -237,11 +262,58 @@ dotnet publish -c Release -r win-x64 /p:SelfContained=true /p:PublishSingleFile=
 
 ## 快速开始
 
-1. 下载最新发布版本
-2. 修改 appsettings.json 配置文件
+1. 下载最新发布版本 [releases](https://gitee.com/fightroad/DicomSCP/releases)
+2. 修改 appsettings.json 配置文件 [appsettings.json](#配置说明)
 3. 运行 DicomSCP.exe
 4. 访问 http://localhost:5000  
 5. 默认账号 admin / admin
+
+## 配置说明
+
+主配置文件为运行目录下的 `appsettings.json`（Docker 见上文挂载路径）。完整字段以仓库内文件为准：
+
+- [appsettings.json（Gitee）](https://gitee.com/fightroad/DicomSCP/blob/master/appsettings.json)
+
+### DicomSettings（DICOM 服务）
+
+| 配置项 | 说明 |
+|--------|------|
+| `AeTitle` | C-STORE SCP 的应用实体标题（AE Title） |
+| `StoreSCPPort` | 存储服务监听端口（默认 11112） |
+| `StoragePath` | 接收影像的归档目录，相对路径相对程序工作目录 |
+| `TempPath` | 临时文件目录 |
+| `Advanced` | 存储高级选项：`ValidateCallingAE` / `AllowedCallingAEs` 控制呼叫方 AE 校验；`EnableCompression`、`PreferredTransferSyntax` 等与压缩/传输语法相关 |
+| `WorklistSCP` | 工作列表服务：`AeTitle`、`Port`（默认 11113）、呼叫方 AE 白名单等 |
+| `QRSCP` | 查询检索 SCP：`Port`（默认 11114）、`MoveDestinations` 为 C-MOVE 目标节点列表（Name / AeTitle / HostName / Port） |
+| `PrintSCP` | 打印 SCP：`Port`（默认 11115）、`AllowedCallingAEs` 等 |
+| `PrintSCU` | 打印 SCU：`Printers` 为远端打印节点；`IsDefault` 指定默认打印机 |
+
+### QueryRetrieveConfig（查询检索 SCU）
+
+| 配置项 | 说明 |
+|--------|------|
+| `LocalAeTitle` | 本机作为 SCU 对外使用的 AE Title |
+| `RemoteNodes` | 远端节点列表：`AeTitle`、`HostName`、`Port`、`Type`（如 `store` / `qr`）供界面或转发使用 |
+
+### Kestrel（Web 与端口）
+
+| 配置项 | 说明 |
+|--------|------|
+| `Kestrel:Endpoints:Http:Url` | HTTP 监听地址，默认 `http://0.0.0.0:5000`；改端口后 Docker 需同步 `-p` |
+| `Kestrel:Limits:MaxRequestBodySize` | 请求体大小上限（字节），大文件上传时可按需调大 |
+
+### ConnectionStrings（数据库）
+
+| 配置项 | 说明 |
+|--------|------|
+| `DicomDb` | SQLite 连接串，`Data Source` 指向库文件路径（默认 `./db/dicom.db`）；Docker 下建议与挂载的 `db` 目录一致 |
+
+### Logging / Swagger
+
+- **Logging**：全局 `LogPath`、`RetainedDays`；`Services` 下可按服务（StoreSCP、QRSCP、WADO 等）单独开关文件/控制台日志、级别与目录。
+- **Swagger**：`Enabled` 控制是否暴露 API 文档；生产环境可关闭。
+
+修改 DICOM 端口或防火墙策略时，需与设备端 AE、IP、端口配置一致；修改路径后请确保进程对目录有读写权限。
 
 ## Docker部署
 appsettings.json需要先在宿主机目录下创建好！
@@ -259,6 +331,25 @@ docker run -d --name DicomSCP --restart unless-stopped \
   fightroad/dicomscp:latest
 
 ```
+
+## 常见问题（FAQ）
+
+### 点击 Weasis 没反应？
+
+界面中的 Weasis 入口会尝试调用本机已安装的 **Weasis** 客户端打开影像。若未安装或安装路径未注册协议，点击可能无反应。请先安装 Weasis，再重试。
+
+- **下载与发行版**：[Weasis GitHub Releases](https://github.com/nroduit/Weasis/releases)（Windows 可选 `.msi` 安装包）
+- **官方文档**：[Weasis 安装说明](https://nroduit.github.io/en/getting-started/)
+
+### Docker 启动失败？
+
+容器依赖将宿主机的 `appsettings.json` 挂载进 `/app/appsettings.json`。请**先在宿主机**创建好 Docker 命令里各 `-v` 对应的目录与文件（尤其是 `appsettings.json`），内容可参考仓库中的示例后再启动容器，避免因缺少文件或目录导致启动失败。
+
+- **示例配置**：[appsettings.json（Gitee）](https://gitee.com/fightroad/DicomSCP/blob/master/appsettings.json)
+
+### C-MOVE 之后接收不到影像？
+
+C-MOVE 会把影像推到**目标存储节点**（接收端）。若配置或类型不对，会出现“MOVE 成功但本机收不到”的情况。请检查 `appsettings.json` 中 **`QueryRetrieveConfig:RemoteNodes`** 是否已正确添加该目标节点，且 **`Type` 必须为 `store`**（表示 C-STORE 接收端）；`AeTitle`、`HostName`、`Port` 需与对端实际监听一致。
 
 ## Nginx反向代理
 
@@ -290,19 +381,19 @@ proxy_http_version 1.1;
 
 感谢以下赞助者的支持（排名不分先后）：
 
-- **平凡之路**
 - **QQ：生活**
 - **GITEE：mmkangaroo**
 - **GITEE：wisgtalt**
 - **GITEE：longlong159357**
 - **GITEE：Dentalman**
-- **支付宝：恒**
-- **微信：syg**
+- **alipay：恒**
+- **wechat：syg**
 - **GITEE：qi-hc**
 - **GITEE：kyo**
 - **GITEE：yunyunvip**
 - **GITEE：三才网络**
 - **GITEE：叶秋梦**
+- **wechat：Calf**
 
 
 

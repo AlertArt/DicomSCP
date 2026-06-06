@@ -4,7 +4,7 @@ using FellowOakDicom;
 using FellowOakDicom.Network;
 using Microsoft.Extensions.Options;
 using DicomSCP.Configuration;
-using DicomSCP.Data;
+using DicomSCP.Repository;
 using FellowOakDicom.Imaging;
 using FellowOakDicom.Imaging.Codec;
 
@@ -12,15 +12,15 @@ namespace DicomSCP.Services;
 
 public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvider, IDicomCEchoProvider, IDisposable
 {
-    private static readonly DicomTransferSyntax[] _acceptedTransferSyntaxes = new[]
-    {
+    private static readonly DicomTransferSyntax[] _acceptedTransferSyntaxes =
+    [
         DicomTransferSyntax.ExplicitVRLittleEndian,
         DicomTransferSyntax.ImplicitVRLittleEndian,
         DicomTransferSyntax.ExplicitVRBigEndian
-    };
+    ];
 
-    private static readonly DicomTransferSyntax[] _acceptedImageTransferSyntaxes = new[]
-    {
+    private static readonly DicomTransferSyntax[] _acceptedImageTransferSyntaxes =
+    [
         DicomTransferSyntax.JPEGLSLossless,
         DicomTransferSyntax.JPEG2000Lossless,
         DicomTransferSyntax.RLELossless,
@@ -31,15 +31,14 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
         DicomTransferSyntax.ExplicitVRLittleEndian,
         DicomTransferSyntax.ImplicitVRLittleEndian,
         DicomTransferSyntax.ExplicitVRBigEndian
-    };
+    ];
 
     private static string? StoragePath;
     private static string? TempPath;
     private static DicomSettings? GlobalSettings;
-    private static DicomRepository? _repository;
+    private static DicomDatasetPersistence? _persistence;
 
     private readonly DicomSettings _settings;
-    private readonly SemaphoreSlim _concurrentLimit;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _fileLocks;
     private bool _disposed;
 
@@ -54,7 +53,7 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
     };
 
 
-    public static void Configure(DicomSettings settings, DicomRepository repository)
+    public static void Configure(DicomSettings settings, DicomDatasetPersistence persistence)
     {
         if (string.IsNullOrEmpty(settings.StoragePath) || string.IsNullOrEmpty(settings.TempPath))
         {
@@ -64,7 +63,7 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
         StoragePath = settings.StoragePath;
         TempPath = settings.TempPath;
         GlobalSettings = settings;
-        _repository = repository;
+        _persistence = persistence;
         
         // 确保目录存在
         Directory.CreateDirectory(StoragePath);
@@ -74,7 +73,7 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
     public CStoreSCP(
         INetworkStream stream, 
         Encoding fallbackEncoding, 
-        Microsoft.Extensions.Logging.ILogger log, 
+        ILogger log, 
         DicomServiceDependencies dependencies,
         IOptions<DicomSettings> settings)
         : base(stream, fallbackEncoding, log, dependencies)
@@ -100,10 +99,6 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
             advancedSettings.EnableCompression,
             advancedSettings.PreferredTransferSyntax);
 
-        int concurrentLimit = advancedSettings.ConcurrentStoreLimit > 0 
-            ? advancedSettings.ConcurrentStoreLimit 
-            : Environment.ProcessorCount * 2;
-        _concurrentLimit = new SemaphoreSlim(concurrentLimit);
         _fileLocks = new ConcurrentDictionary<string, SemaphoreSlim>();
     }
 
@@ -179,7 +174,7 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
         }
     }
 
-    private bool IsImageStorage(DicomUID sopClass)
+    private static bool IsImageStorage(DicomUID sopClass)
     {
         // 检查是否是图像存储类别
         if (sopClass.StorageCategory == DicomStorageCategory.Image)
@@ -393,7 +388,7 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
     }
 
     // 修改 UID 格式化方法
-    private string FormatUID(string uid)
+    private static string FormatUID(string uid)
     {
         try
         {
@@ -499,7 +494,7 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
     }
 
     // 添加时间格式化方法
-    private string StandardizeDicomDate(string? dateValue)
+    private static string StandardizeDicomDate(string? dateValue)
     {
         if (string.IsNullOrEmpty(dateValue))
         {
@@ -559,11 +554,7 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
 
             SemaphoreSlim? fileLock = null;
 
-            try
-            {
-                await _concurrentLimit.WaitAsync();
-
-                DicomLogger.Information("StoreSCP", "收到DICOM存储请求 - SOP Class: {SopClass}", request.SOPClassUID.Name);
+            DicomLogger.Information("StoreSCP", "收到DICOM存储请求 - SOP Class: {SopClass}", request.SOPClassUID.Name);
 
                 var validationResult = ValidateKeyDicomTags(request.Dataset);
                 if (!validationResult.IsValid)
@@ -657,16 +648,12 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
                         new FileInfo(targetFilePath).Length);
 
                     // 在保存到数据库之前处理文本字段
-                    if (_repository != null)
+                    if (_persistence != null)
                     {
                         try
                         {
                             // 直接使用原始数据集
-                            await _repository.SaveDicomDataAsync(request.Dataset, relativePath);
-
-                            // 更新 Study 的 Modality
-                            var modality = request.Dataset.GetSingleValueOrDefault<string>(DicomTag.Modality, string.Empty);
-                            await _repository.UpdateStudyModalityAsync(studyUid, modality);
+                            await _persistence.SaveDicomDataAsync(request.Dataset, relativePath);
                         }
                         catch (Exception ex)
                         {
@@ -687,11 +674,6 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
                         }
                     }
                 }
-            }
-            finally
-            {
-                _concurrentLimit.Release();
-            }
         }
         catch (Exception ex)
         {
@@ -780,7 +762,6 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
         {
             if (disposing)
             {
-                _concurrentLimit.Dispose();
                 // 清理所有文件锁
                 foreach (var fileLock in _fileLocks.Values)
                 {

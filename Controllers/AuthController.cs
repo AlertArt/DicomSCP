@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using DicomSCP.Data;
+using DicomSCP.Repository;
 using DicomSCP.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -9,14 +9,9 @@ namespace DicomSCP.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class AuthController : ControllerBase
+public class AuthController(UserRepository repository) : ControllerBase
 {
-    private readonly DicomRepository _repository;
-
-    public AuthController(DicomRepository repository)
-    {
-        _repository = repository;
-    }
+    private readonly UserRepository _repository = repository;
 
     [HttpPost("login")]
     [AllowAnonymous]
@@ -30,7 +25,7 @@ public class AuthController : ControllerBase
 
         var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.Name, request.Username)
+            new(ClaimTypes.Name, request.Username)
         };
 
         await HttpContext.SignInAsync(
