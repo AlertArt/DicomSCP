@@ -26,6 +26,14 @@
     </Content>
   </ItemGroup>
 
+  <!-- 测试项目嵌套在主项目目录内，必须从主项目编译中排除 -->
+  <ItemGroup>
+    <Compile Remove="DicomSCP.Tests\**" />
+    <Content Remove="DicomSCP.Tests\**" />
+    <EmbeddedResource Remove="DicomSCP.Tests\**" />
+    <None Remove="DicomSCP.Tests\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="fo-dicom" Version="5.2.6" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />

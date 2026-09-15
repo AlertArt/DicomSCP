@@ -1,0 +1,99 @@
+using Microsoft.Extensions.Configuration;
+using FellowOakDicom;
+
+namespace DicomSCP.Tests;
+
+/// <summary>
+/// 测试数据库基础设施：每个测试独立的临时 SQLite 库。
+/// </summary>
+public sealed class TestDb : IDisposable
+{
+    public string DbPath { get; }
+    public string ConnectionString { get; }
+    public IConfiguration Config { get; }
+
+    public TestDb()
+    {
+        DbPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"dicom_test_{Guid.NewGuid():N}.db");
+        ConnectionString = $"Data Source={DbPath}";
+        Config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DicomDb"] = ConnectionString
+            })
+            .Build();
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            if (File.Exists(DbPath))
+            {
+                File.Delete(DbPath);
+            }
+        }
+        catch
+        {
+            // 临时文件清理失败不影响测试结果
+        }
+    }
+}
+
+/// <summary>
+/// 构造测试用 DICOM 数据集（覆盖 Patient/Study/Series/Instance 四级关键标签）。
+/// </summary>
+public static class DicomTestData
+{
+    public static DicomDataset MakeInstance(
+        string patientId = "PAT001",
+        string patientName = "Test^Patient",
+        string studyUid = "1.2.840.113619.2.1.1.1",
+        string seriesUid = "1.2.840.113619.2.1.1.2",
+        string sopUid = "1.2.840.113619.2.1.1.3",
+        string studyDate = "20240101",
+        string modality = "CT",
+        string accession = "ACC001")
+    {
+        var ds = new DicomDataset();
+        ds.AddOrUpdate(DicomTag.PatientID, patientId);
+        ds.AddOrUpdate(DicomTag.PatientName, patientName);
+        ds.AddOrUpdate(DicomTag.PatientBirthDate, "19800101");
+        ds.AddOrUpdate(DicomTag.PatientSex, "M");
+        ds.AddOrUpdate(DicomTag.StudyInstanceUID, studyUid);
+        ds.AddOrUpdate(DicomTag.SeriesInstanceUID, seriesUid);
+        ds.AddOrUpdate(DicomTag.SOPInstanceUID, sopUid);
+        ds.AddOrUpdate(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+        ds.AddOrUpdate(DicomTag.StudyDate, studyDate);
+        ds.AddOrUpdate(DicomTag.Modality, modality);
+        ds.AddOrUpdate(DicomTag.AccessionNumber, accession);
+        ds.AddOrUpdate(DicomTag.SeriesNumber, "1");
+        ds.AddOrUpdate(DicomTag.InstanceNumber, "1");
+        return ds;
+    }
+}
+
+/// <summary>
+/// 将 DICOM 数据集直接批量写入测试库（绕过异步队列，保证测试确定性）。
+/// </summary>
+public static class Seed
+{
+    public static async Task<Repository.DicomDatasetPersistence.WriteResult> InsertAsync(
+        TestDb db,
+        Repository.DicomDatasetPersistence persistence,
+        params DicomDataset[] datasets)
+    {
+        var items = datasets
+            .Select(d => (d, $"rel/{d.GetSingleValue<string>(DicomTag.SOPInstanceUID)}.dcm"))
+            .ToList();
+
+        var batch = persistence.BuildBatchData(items, DateTime.Now);
+
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(db.ConnectionString);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        var result = await persistence.InsertBatchAsync(connection, transaction, batch);
+        await transaction.CommitAsync();
+        return result;
+    }
+}
