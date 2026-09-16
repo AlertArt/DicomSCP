@@ -15,25 +15,10 @@ public class QRSCP : DicomService, IDicomServiceProvider, IDicomCEchoProvider, I
     private static DicomSettings? _globalSettings;
     private static DicomRepository? _globalRepository;
 
-    private static readonly DicomTransferSyntax[] AcceptedTransferSyntaxes = new[]
-    {
-        DicomTransferSyntax.ExplicitVRLittleEndian,
-        DicomTransferSyntax.ExplicitVRBigEndian,
-        DicomTransferSyntax.ImplicitVRLittleEndian
-    };
+    // 接受语法统一由 DicomNegotiation 提供（原为与本类及 CStoreSCP 重复的硬编码列表）
+    private static readonly DicomTransferSyntax[] AcceptedTransferSyntaxes = DicomNegotiation.SupportedBasicSyntaxes;
 
-    private static readonly DicomTransferSyntax[] AcceptedImageTransferSyntaxes = new[]
-    {
-        DicomTransferSyntax.JPEGLSLossless,            // JPEG-LS Lossless
-        DicomTransferSyntax.JPEG2000Lossless,          // JPEG 2000 Lossless
-        DicomTransferSyntax.JPEGProcess14SV1,          // JPEG Lossless
-        DicomTransferSyntax.RLELossless,               // RLE Lossless
-        DicomTransferSyntax.JPEGLSNearLossless,        // JPEG-LS Near Lossless
-        DicomTransferSyntax.JPEG2000Lossy,             // JPEG 2000 Lossy
-        DicomTransferSyntax.ExplicitVRLittleEndian,    // Explicit Little Endian
-        DicomTransferSyntax.ImplicitVRLittleEndian,    // Implicit Little Endian
-        DicomTransferSyntax.ExplicitVRBigEndian        // Explicit Big Endian
-    };
+    private static readonly DicomTransferSyntax[] AcceptedImageTransferSyntaxes = DicomNegotiation.SupportedImageStorageSyntaxes;
 
     private readonly DicomSettings _settings;
     private readonly DicomRepository _repository;
@@ -763,6 +748,7 @@ public class QRSCP : DicomService, IDicomServiceProvider, IDicomCEchoProvider, I
         client.NegotiateAsyncOps();
 
         // 添加所有可能的存储类 PresentationContexts
+        // （奇数 PC ID，符合 PS3.8 9.3.2；原实现 1..14 含偶数 ID）
         var storageUids = new DicomUID[]
         {
             DicomUID.CTImageStorage,
@@ -781,11 +767,11 @@ public class QRSCP : DicomService, IDicomServiceProvider, IDicomCEchoProvider, I
             DicomUID.PositronEmissionTomographyImageStorage
         };
 
-        byte pcid = 1;
-        foreach (var uid in storageUids)
+        foreach (var pc in DicomNegotiation.ComputeMissingPresentationContexts(
+                     Enumerable.Empty<DicomPresentationContext>(),
+                     storageUids,
+                     AcceptedImageTransferSyntaxes))
         {
-            var pc = new DicomPresentationContext(pcid++, uid);
-            pc.AcceptTransferSyntaxes(AcceptedImageTransferSyntaxes);
             client.AdditionalPresentationContexts.Add(pc);
         }
 
@@ -1197,14 +1183,18 @@ public class QRSCP : DicomService, IDicomServiceProvider, IDicomCEchoProvider, I
 
     private async Task SendToDestinationAsync(IDicomClient client, List<DicomFile> files)
     {
-        // 1. 按 SOP Class 分组添加 PresentationContext
-        var sopClassGroups = files.GroupBy(f => f.Dataset.GetSingleValue<DicomUID>(DicomTag.SOPClassUID));
-        foreach (var group in sopClassGroups)
+        // 1. 幂等添加缺失的存储类 PresentationContext：
+        //    原实现每批次按 Count() 分配 ID（首批复制 ID 14、含偶数、跨批重复累积、
+        //    超过 255 时 (byte) 截断回绕）；现仅补充尚未覆盖的抽象语法，奇数 ID 不回绕
+        var newContexts = DicomNegotiation.ComputeMissingPresentationContexts(
+            client.AdditionalPresentationContexts,
+            files.GroupBy(f => f.Dataset.GetSingleValue<DicomUID>(DicomTag.SOPClassUID)).Select(g => g.Key),
+            AcceptedImageTransferSyntaxes);
+
+        foreach (var presentationContext in newContexts)
         {
-            var presentationContext = new DicomPresentationContext(
-                (byte)client.AdditionalPresentationContexts.Count(),
-                group.Key);
-            presentationContext.AcceptTransferSyntaxes(AcceptedImageTransferSyntaxes);
+            DicomLogger.Information("QRSCP", "新增表示上下文 - ID: {PcId}, SOP Class: {SopClass}",
+                presentationContext.ID, presentationContext.AbstractSyntax.Name);
             client.AdditionalPresentationContexts.Add(presentationContext);
         }
 

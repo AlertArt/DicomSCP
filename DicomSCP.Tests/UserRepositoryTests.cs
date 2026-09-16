@@ -137,7 +137,7 @@ public class UserRepositoryTests : IDisposable
         Assert.Equal(legacyHash, stored);
     }
 
-    private static async Task<string> GetStoredPasswordAsync(string connectionString, string username)
+    private static async Task<string?> GetStoredPasswordAsync(string connectionString, string username)
     {
         await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
         return await connection.ExecuteScalarAsync<string>(

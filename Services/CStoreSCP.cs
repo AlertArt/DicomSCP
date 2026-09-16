@@ -12,26 +12,10 @@ namespace DicomSCP.Services;
 
 public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvider, IDicomCEchoProvider, IDisposable
 {
-    private static readonly DicomTransferSyntax[] _acceptedTransferSyntaxes =
-    [
-        DicomTransferSyntax.ExplicitVRLittleEndian,
-        DicomTransferSyntax.ImplicitVRLittleEndian,
-        DicomTransferSyntax.ExplicitVRBigEndian
-    ];
+    // 接受语法统一由 DicomNegotiation 提供（原为与 QRSCP 重复的硬编码列表）
+    private static readonly DicomTransferSyntax[] _acceptedTransferSyntaxes = DicomNegotiation.SupportedBasicSyntaxes;
 
-    private static readonly DicomTransferSyntax[] _acceptedImageTransferSyntaxes =
-    [
-        DicomTransferSyntax.JPEGLSLossless,
-        DicomTransferSyntax.JPEG2000Lossless,
-        DicomTransferSyntax.RLELossless,
-        DicomTransferSyntax.JPEGLSNearLossless,
-        DicomTransferSyntax.JPEG2000Lossy,
-        DicomTransferSyntax.JPEGProcess1,
-        DicomTransferSyntax.JPEGProcess2_4,
-        DicomTransferSyntax.ExplicitVRLittleEndian,
-        DicomTransferSyntax.ImplicitVRLittleEndian,
-        DicomTransferSyntax.ExplicitVRBigEndian
-    ];
+    private static readonly DicomTransferSyntax[] _acceptedImageTransferSyntaxes = DicomNegotiation.SupportedImageStorageSyntaxes;
 
     private static string? StoragePath;
     private static string? TempPath;

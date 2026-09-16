@@ -38,7 +38,7 @@ public static class PasswordHasher
     /// <summary>
     /// 校验口令与存储值是否匹配。历史无盐格式校验通过时 needsUpgrade = true。
     /// </summary>
-    public static bool Verify(string password, string stored, out bool needsUpgrade)
+    public static bool Verify(string? password, string? stored, out bool needsUpgrade)
     {
         needsUpgrade = false;
 
