@@ -40,7 +40,7 @@ public class AssociationGuardTests
     public void ApplicationContextName_Constant_MatchesDicomUIDRegistry()
     {
         // 固化常量与 fo-dicom UID 字典的一致性，防止拼写漂移
-        Assert.Equal(DicomUID.DICOMApplicationContext.UID, AssociationGuard.DicomApplicationContextName);
+        Assert.Equal(AssociationGuard.DicomApplicationContextName, DicomUID.DICOMApplicationContext.UID);
     }
 
     #endregion

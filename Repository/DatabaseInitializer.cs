@@ -31,7 +31,20 @@ public static class DatabaseInitializer
         await connection.ExecuteAsync(DatabaseSchemaSql.CreateInstancesTable, transaction: transaction);
         await connection.ExecuteAsync(DatabaseSchemaSql.CreateWorklistTable, transaction: transaction);
         await connection.ExecuteAsync(DatabaseSchemaSql.CreateUsersTable, transaction: transaction);
-        await connection.ExecuteAsync(DatabaseSchemaSql.InitializeAdminUser, transaction: transaction);
+
+        // 初始化默认管理员：PBKDF2 + 每次安装独立随机盐（替代源码硬编码哈希）。
+        // 已存在则不覆盖，保留用户修改后的口令（与原 INSERT OR IGNORE 语义一致）
+        var adminExists = await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM Users WHERE Username = 'admin'",
+            transaction: transaction);
+        if (adminExists == 0)
+        {
+            await connection.ExecuteAsync(
+                "INSERT INTO Users (Username, Password) VALUES ('admin', @Password)",
+                new { Password = PasswordHasher.Hash("admin", PasswordHasher.DefaultIterations) },
+                transaction: transaction);
+        }
+
         await connection.ExecuteAsync(DatabaseSchemaSql.CreatePrintJobsTable, transaction: transaction);
 
         // 在建表完成后执行字段升级迁移

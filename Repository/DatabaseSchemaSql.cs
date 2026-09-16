@@ -100,9 +100,8 @@ public static class DatabaseSchemaSql
                 Password TEXT NOT NULL
             )";
 
-    public const string InitializeAdminUser = @"
-            INSERT OR IGNORE INTO Users (Username, Password) 
-            VALUES ('admin', 'jGl25bVBBBW96Qi9Te4V37Fnqchz/Eu4qB9vKrRIqRg=')";
+    // 默认管理员由 DatabaseInitializer 在运行时以 PBKDF2（每次安装独立随机盐）创建，
+    // 不再使用源码硬编码哈希，见 DatabaseInitializer.InitializeAsync
 
     public const string CreatePrintJobsTable = @"
             CREATE TABLE IF NOT EXISTS PrintJobs (
