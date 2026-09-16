@@ -76,26 +76,23 @@ public class PrintSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvi
                 association.CalledAE, 
                 association.CallingAE);
 
-            // AE Title 验证
-            if (_settings.PrintSCP.ValidateCallingAE && 
-                !_settings.PrintSCP.AllowedCallingAEs.Contains(association.CallingAE))
-            {
-                DicomLogger.Warning("PrintSCP", "拒绝未授权的 Calling AE: {CallingAE}", association.CallingAE);
-                return SendAssociationRejectAsync(
-                    DicomRejectResult.Permanent,
-                    DicomRejectSource.ServiceUser,
-                    DicomRejectReason.CallingAENotRecognized);
-            }
+            // 统一关联校验：应用上下文 + Called/Calling AE（见 AssociationGuard）
+            // 注：原实现先查 Calling AE 白名单且大小写敏感，现与其他 SCP 统一为
+            // Called AE 优先 + 忽略大小写（DICOM AE Title 按约定不区分大小写）
+            var rejectReason = AssociationGuard.Validate(
+                association,
+                _settings.PrintSCP.AeTitle,
+                _settings.PrintSCP.ValidateCallingAE,
+                _settings.PrintSCP.AllowedCallingAEs ?? Array.Empty<string>());
 
-            if (_settings.PrintSCP.AeTitle != association.CalledAE)
+            if (rejectReason.HasValue)
             {
-                DicomLogger.Warning("PrintSCP", "拒绝错误的 Called AE: {CalledAE}，期望：{ExpectedAE}", 
-                    association.CalledAE, 
-                    _settings.PrintSCP.AeTitle);
+                DicomLogger.Warning("PrintSCP", "拒绝关联请求 - Called AE: {CalledAE}, Calling AE: {CallingAE}, 原因: {Reason}",
+                    association.CalledAE, association.CallingAE, rejectReason);
                 return SendAssociationRejectAsync(
                     DicomRejectResult.Permanent,
                     DicomRejectSource.ServiceUser,
-                    DicomRejectReason.CalledAENotRecognized);
+                    rejectReason.Value);
             }
 
             _session.CallingAE = association.CallingAE;

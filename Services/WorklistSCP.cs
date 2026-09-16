@@ -61,42 +61,25 @@ public class WorklistSCP : DicomService, IDicomServiceProvider, IDicomCFindProvi
 
     public Task OnReceiveAssociationRequestAsync(DicomAssociation association)
     {
-        var calledAE = association.CalledAE;
-        var expectedAE = _settings?.WorklistSCP.AeTitle ?? string.Empty;
+        // 统一关联校验：应用上下文 + Called/Calling AE（见 AssociationGuard）
+        var rejectReason = AssociationGuard.Validate(
+            association,
+            _settings?.WorklistSCP.AeTitle ?? string.Empty,
+            _settings?.WorklistSCP.ValidateCallingAE == true,
+            _settings?.WorklistSCP?.AllowedCallingAEs ?? Enumerable.Empty<string>());
 
-        if (!string.Equals(expectedAE, calledAE, StringComparison.OrdinalIgnoreCase))
+        if (rejectReason.HasValue)
         {
-            DicomLogger.Warning("WorklistSCP", "拒绝错误的 Called AE: {CalledAE}, 期望: {ExpectedAE}", 
-                calledAE, expectedAE);
+            DicomLogger.Warning("WorklistSCP", "拒绝关联请求 - Called AE: {CalledAE}, Calling AE: {CallingAE}, 原因: {Reason}",
+                association.CalledAE, association.CallingAE, rejectReason);
             return SendAssociationRejectAsync(
                 DicomRejectResult.Permanent,
                 DicomRejectSource.ServiceUser,
-                DicomRejectReason.CalledAENotRecognized);
+                rejectReason.Value);
         }
 
-        if (string.IsNullOrEmpty(association.CallingAE))
-        {
-            DicomLogger.Warning("WorklistSCP", "拒绝空的 Calling AE");
-            return SendAssociationRejectAsync(
-                DicomRejectResult.Permanent,
-                DicomRejectSource.ServiceUser,
-                DicomRejectReason.CallingAENotRecognized);
-        }
-
-        if (_settings?.WorklistSCP.ValidateCallingAE == true)
-        {
-            if (!_settings.WorklistSCP.AllowedCallingAEs.Contains(association.CallingAE, StringComparer.OrdinalIgnoreCase))
-            {
-                DicomLogger.Warning("WorklistSCP", "拒绝未授权的调用方AE: {CallingAE}", association.CallingAE);
-                return SendAssociationRejectAsync(
-                    DicomRejectResult.Permanent,
-                    DicomRejectSource.ServiceUser,
-                    DicomRejectReason.CallingAENotRecognized);
-            }
-        }
-
-        DicomLogger.Debug("WorklistSCP", "验证通过 - Called AE: {CalledAE}, Calling AE: {CallingAE}", 
-            calledAE, association.CallingAE);
+        DicomLogger.Debug("WorklistSCP", "验证通过 - Called AE: {CalledAE}, Calling AE: {CallingAE}",
+            association.CalledAE, association.CallingAE);
 
         foreach (var pc in association.PresentationContexts)
         {
