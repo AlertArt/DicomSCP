@@ -149,3 +149,46 @@ public class ReferencedSopInstance
     public bool Verified { get; set; }
     public ushort FailureReason { get; set; }
 }
+
+/// <summary>执行程序步骤（MPPS）记录，对应表 MPPS。</summary>
+public class MppsRecord
+{
+    public string MppsId { get; set; } = string.Empty;
+    public string PerformedProcedureStepId { get; set; } = string.Empty;
+    public string PerformedProcedureStepStatus { get; set; } = string.Empty;
+    public string? PerformedProcedureStepStartDate { get; set; }
+    public string? PerformedProcedureStepStartTime { get; set; }
+    public string? PerformedProcedureStepEndDate { get; set; }
+    public string? PerformedProcedureStepEndTime { get; set; }
+    public string? PerformedProcedureStepDescription { get; set; }
+    public string? PerformedProcedureTypeDescription { get; set; }
+    public string? PerformedStationAeTitle { get; set; }
+    public string? PerformedStationName { get; set; }
+    public string? PerformedLocation { get; set; }
+    public string? PerformedProcedureStepDiscontinuationReason { get; set; }
+    public string? Modality { get; set; }
+    public string? StudyInstanceUid { get; set; }
+    public string? AccessionNumber { get; set; }
+    public string? PatientName { get; set; }
+    public string? PatientId { get; set; }
+    public string? PatientBirthDate { get; set; }
+    public string? PatientSex { get; set; }
+    public string? CallingAE { get; set; }
+    public DateTime CreateTime { get; set; } = DateTime.Now;
+    public DateTime UpdateTime { get; set; } = DateTime.Now;
+    public List<MppsSeriesRecord> Series { get; set; } = new();
+}
+
+/// <summary>MPPS 中执行序列记录，对应表 MPPSSeries。</summary>
+public class MppsSeriesRecord
+{
+    public int Id { get; set; }
+    public string MppsId { get; set; } = string.Empty;
+    public string SeriesInstanceUid { get; set; } = string.Empty;
+    public string? Modality { get; set; }
+    public string? SeriesDescription { get; set; }
+    public string? ProtocolName { get; set; }
+    public string? PerformingPhysicianName { get; set; }
+    public string? OperatorName { get; set; }
+    public string? ReferencedSopUids { get; set; }
+}

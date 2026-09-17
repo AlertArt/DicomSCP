@@ -14,6 +14,7 @@ public sealed class DicomServer(
     WorklistRepository worklistRepository,
     PrintRepository printRepository,
     StorageCommitmentRepository commitmentRepository,
+    MppsRepository mppsRepository,
     DicomDatasetPersistence persistence) : IDisposable
 {
     private readonly DicomSettings _settings = settings?.Value ?? throw new ArgumentNullException(nameof(settings));
@@ -22,6 +23,7 @@ public sealed class DicomServer(
     private readonly WorklistRepository _worklistRepository = worklistRepository ?? throw new ArgumentNullException(nameof(worklistRepository));
     private readonly PrintRepository _printRepository = printRepository ?? throw new ArgumentNullException(nameof(printRepository));
     private readonly StorageCommitmentRepository _commitmentRepository = commitmentRepository ?? throw new ArgumentNullException(nameof(commitmentRepository));
+    private readonly MppsRepository _mppsRepository = mppsRepository ?? throw new ArgumentNullException(nameof(mppsRepository));
     private readonly DicomDatasetPersistence _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
     
     private IDicomServer? _storeScp;
@@ -29,9 +31,10 @@ public sealed class DicomServer(
     private IDicomServer? _qrScp;
     private IDicomServer? _printScp;
     private IDicomServer? _storageCommitmentScp;
+    private IDicomServer? _mppsScp;
     private bool _disposed;
 
-    public bool IsRunning => _storeScp != null || _worklistScp != null || _qrScp != null || _printScp != null || _storageCommitmentScp != null;
+    public bool IsRunning => _storeScp != null || _worklistScp != null || _qrScp != null || _printScp != null || _storageCommitmentScp != null || _mppsScp != null;
 
     public async Task StartAsync()
     {
@@ -57,10 +60,12 @@ public sealed class DicomServer(
             _qrScp?.Dispose();
             _printScp?.Dispose();
             _storageCommitmentScp?.Dispose();
+            _mppsScp?.Dispose();
             _storeScp = _worklistScp = null;
             _qrScp = null;
             _printScp = null;
             _storageCommitmentScp = null;
+            _mppsScp = null;
             throw;
         }
     }
@@ -103,6 +108,9 @@ public sealed class DicomServer(
 
             // 配置存储服务承诺服务
             StorageCommitmentSCP.Configure(_settings, _repository, _commitmentRepository);
+
+            // 配置执行程序步骤服务
+            MppsSCP.Configure(_settings, _mppsRepository);
 
             try
             {
@@ -194,6 +202,24 @@ public sealed class DicomServer(
                 DicomLogger.Error("DICOM", ex, "启动存储服务承诺服务失败");
                 throw;
             }
+
+            try
+            {
+                // 启动执行程序步骤服务
+                _mppsScp = DicomServerFactory.Create<MppsSCP>(
+                    _settings.MppsSCP.Port,
+                    null,
+                    Encoding.UTF8,
+                    _loggerFactory.CreateLogger<MppsSCP>());
+
+                DicomLogger.Information("DICOM", "执行程序步骤服务已启动 - AET: {AeTitle}, 端口: {Port}",
+                    _settings.MppsSCP.AeTitle, _settings.MppsSCP.Port);
+            }
+            catch (Exception ex)
+            {
+                DicomLogger.Error("DICOM", ex, "启动执行程序步骤服务失败");
+                throw;
+            }
         }
         catch (Exception ex)
         {
@@ -203,10 +229,12 @@ public sealed class DicomServer(
             _qrScp?.Dispose();
             _printScp?.Dispose();
             _storageCommitmentScp?.Dispose();
+            _mppsScp?.Dispose();
             _storeScp = _worklistScp = null;
             _qrScp = null;
             _printScp = null;
             _storageCommitmentScp = null;
+            _mppsScp = null;
             throw;
         }
     }
@@ -228,10 +256,12 @@ public sealed class DicomServer(
                 _qrScp?.Dispose();
                 _printScp?.Dispose();
                 _storageCommitmentScp?.Dispose();
+                _mppsScp?.Dispose();
                 _storeScp = _worklistScp = null;
                 _qrScp = null;
                 _printScp = null;
                 _storageCommitmentScp = null;
+                _mppsScp = null;
             });
             DicomLogger.Information("DICOM", "DICOM服务已停止...");
         }
@@ -254,6 +284,7 @@ public sealed class DicomServer(
         _qrScp?.Dispose();
         _printScp?.Dispose();
         _storageCommitmentScp?.Dispose();
+        _mppsScp?.Dispose();
         _disposed = true;
     }
 
@@ -286,6 +317,7 @@ public sealed class DicomServer(
         public bool QrScp { get; set; }
         public bool PrintScp { get; set; }
         public bool StorageCommitmentScp { get; set; }
+        public bool MppsScp { get; set; }
     }
 
     public ServiceStatus GetServicesStatus()
@@ -299,7 +331,8 @@ public sealed class DicomServer(
                 WorklistScp = _worklistScp != null,
                 QrScp = _qrScp != null,
                 PrintScp = _printScp != null,
-                StorageCommitmentScp = _storageCommitmentScp != null
+                StorageCommitmentScp = _storageCommitmentScp != null,
+                MppsScp = _mppsScp != null
             }
         };
     }

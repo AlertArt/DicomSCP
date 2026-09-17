@@ -151,4 +151,45 @@ public static class DatabaseSchemaSql
                 CreateTime DATETIME,
                 CompleteTime DATETIME
             )";
+
+    public const string CreateMppsTable = @"
+            CREATE TABLE IF NOT EXISTS MPPS (
+                MppsId TEXT PRIMARY KEY,
+                PerformedProcedureStepId TEXT,
+                PerformedProcedureStepStatus TEXT,
+                PerformedProcedureStepStartDate TEXT,
+                PerformedProcedureStepStartTime TEXT,
+                PerformedProcedureStepEndDate TEXT,
+                PerformedProcedureStepEndTime TEXT,
+                PerformedProcedureStepDescription TEXT,
+                PerformedProcedureTypeDescription TEXT,
+                PerformedStationAeTitle TEXT,
+                PerformedStationName TEXT,
+                PerformedLocation TEXT,
+                PerformedProcedureStepDiscontinuationReason TEXT,
+                Modality TEXT,
+                StudyInstanceUid TEXT,
+                AccessionNumber TEXT,
+                PatientName TEXT,
+                PatientId TEXT,
+                PatientBirthDate TEXT,
+                PatientSex TEXT,
+                CallingAE TEXT,
+                CreateTime DATETIME,
+                UpdateTime DATETIME
+            )";
+
+    public const string CreateMppsSeriesTable = @"
+            CREATE TABLE IF NOT EXISTS MPPSSeries (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                MppsId TEXT,
+                SeriesInstanceUid TEXT,
+                Modality TEXT,
+                SeriesDescription TEXT,
+                ProtocolName TEXT,
+                PerformingPhysicianName TEXT,
+                OperatorName TEXT,
+                ReferencedSopUids TEXT,
+                FOREIGN KEY(MppsId) REFERENCES MPPS(MppsId)
+            )";
 }
