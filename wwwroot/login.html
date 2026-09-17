@@ -134,6 +134,7 @@
     </style>
 </head>
 <body>
+    <div style="position:fixed; top:1rem; right:1rem; width:110px; z-index:100;" id="i18n-switcher"></div>
     <div class="login-container">
         <div class="logo-container">
             <img src="images/logo.png" alt="Logo">
@@ -174,6 +175,7 @@
 
     <script src="lib/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="lib/axios/axios.min.js"></script>
+    <script src="js/i18n.js"></script>
     <script>
         async function login() {
             const username = document.getElementById('username').value;

@@ -381,8 +381,7 @@ class LogManager {
             container.innerHTML = `
                 <div class="d-flex justify-content-between align-items-center mt-3">
                     <div class="pagination-info">
-                        显示 <span id="logs-currentRange">${this.allFiles.length > 0 ? `${start}-${end}` : '0-0'}</span> 条，
-                        共 <span id="logs-totalCount">${this.allFiles.length}</span> 条
+                        <span>显示</span> <span id="logs-currentRange">${this.allFiles.length > 0 ? `${start}-${end}` : '0-0'}</span> <span>条，共</span> <span id="logs-totalCount">${this.allFiles.length}</span> <span>条</span>
                     </div>
                     <nav aria-label="分页导航">
                         <ul class="pagination mb-0">
