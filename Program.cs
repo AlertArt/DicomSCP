@@ -128,6 +128,7 @@ builder.Services.AddSingleton<DicomDatasetPersistence>();
 builder.Services.AddSingleton<DicomServer>();
 builder.Services.AddSingleton<WorklistRepository>();
 builder.Services.AddSingleton<IStoreSCU, StoreSCU>();
+builder.Services.AddSingleton<IMwlScu, MwlScu>();
 builder.Services.AddSingleton<IPrintSCU, PrintSCU>();
 
 // 确保配置服务正确注册
