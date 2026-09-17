@@ -46,6 +46,7 @@ public static class DatabaseInitializer
         }
 
         await connection.ExecuteAsync(DatabaseSchemaSql.CreatePrintJobsTable, transaction: transaction);
+        await connection.ExecuteAsync(DatabaseSchemaSql.CreateStorageCommitmentsTable, transaction: transaction);
 
         // 在建表完成后执行字段升级迁移
         await DatabaseSchemaMigrator.MigrateAsync(connection, transaction);

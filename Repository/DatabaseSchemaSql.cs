@@ -139,4 +139,16 @@ public static class DatabaseSchemaSql
                 CreateTime DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UpdateTime DATETIME DEFAULT CURRENT_TIMESTAMP
             )";
+
+    public const string CreateStorageCommitmentsTable = @"
+            CREATE TABLE IF NOT EXISTS StorageCommitments (
+                TransactionUid TEXT PRIMARY KEY,
+                CallingAE TEXT,
+                Status TEXT DEFAULT 'PENDING',
+                TotalCount INTEGER DEFAULT 0,
+                FailedCount INTEGER DEFAULT 0,
+                FailedInstances TEXT,
+                CreateTime DATETIME,
+                CompleteTime DATETIME
+            )";
 }

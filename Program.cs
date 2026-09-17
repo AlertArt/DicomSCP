@@ -120,6 +120,7 @@ builder.Services
 builder.Services.AddSingleton<DicomRepository>();
 builder.Services.AddSingleton<StudyBasicInfoRepository>();
 builder.Services.AddSingleton<PrintRepository>();
+builder.Services.AddSingleton<StorageCommitmentRepository>();
 builder.Services.AddSingleton<UserRepository>();
 builder.Services.AddSingleton<DicomDatasetPersistence>();
 builder.Services.AddSingleton<DicomServer>();

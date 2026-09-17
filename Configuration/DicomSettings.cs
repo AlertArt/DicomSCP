@@ -41,6 +41,8 @@ public class DicomSettings
 
     public PrintSCPSettings PrintSCP { get; set; } = new();
 
+    public StorageCommitmentSCPSettings StorageCommitmentSCP { get; set; } = new();
+
     public PrintScuConfig? PrintSCU { get; set; }
     
     public List<PrinterConfig> Printers { get; set; } = new();
@@ -96,4 +98,20 @@ public class PrintSCPSettings
 
     public bool ValidateCallingAE { get; set; } = false;
     public string[] AllowedCallingAEs { get; set; } = Array.Empty<string>();
+}
+
+public class StorageCommitmentSCPSettings
+{
+    [Required]
+    [RegularExpression(@"^[A-Za-z0-9\-_]{1,16}$")]
+    public string AeTitle { get; set; } = "STORECOMMITSCP";
+
+    [Range(1, 65535)]
+    public int Port { get; set; } = 11116;
+
+    public bool ValidateCallingAE { get; set; } = false;
+    public string[] AllowedCallingAEs { get; set; } = Array.Empty<string>();
+
+    /// <summary>推送 N-EVENT-REPORT 时使用的重连尝试次数（默认 3 次）。</summary>
+    public int PushRetryCount { get; set; } = 3;
 } 

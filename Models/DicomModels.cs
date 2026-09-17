@@ -120,3 +120,32 @@ public class SeriesInfo
     public string SeriesDescription { get; set; } = string.Empty;
     public int NumberOfInstances { get; set; }
 }
+
+public enum StorageCommitmentStatus
+{
+    Pending,
+    Success,
+    FailuresExist
+}
+
+/// <summary>存储承诺事务记录（对应表 StorageCommitments）。</summary>
+public class StorageCommitmentRecord
+{
+    public string TransactionUid { get; set; } = string.Empty;
+    public string CallingAE { get; set; } = string.Empty;
+    public string Status { get; set; } = StorageCommitmentStatus.Pending.ToString();
+    public int TotalCount { get; set; }
+    public int FailedCount { get; set; }
+    public string? FailedInstances { get; set; }
+    public DateTime CreateTime { get; set; } = DateTime.Now;
+    public DateTime? CompleteTime { get; set; }
+}
+
+/// <summary>存储承诺中引用的单个 SOP 实例。</summary>
+public class ReferencedSopInstance
+{
+    public string SopClassUid { get; set; } = string.Empty;
+    public string SopInstanceUid { get; set; } = string.Empty;
+    public bool Verified { get; set; }
+    public ushort FailureReason { get; set; }
+}
