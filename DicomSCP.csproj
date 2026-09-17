@@ -32,6 +32,10 @@
     <Content Remove="DicomSCP.Tests\**" />
     <EmbeddedResource Remove="DicomSCP.Tests\**" />
     <None Remove="DicomSCP.Tests\**" />
+    <Compile Remove="DicomSCP.IntegrationTests\**" />
+    <Content Remove="DicomSCP.IntegrationTests\**" />
+    <EmbeddedResource Remove="DicomSCP.IntegrationTests\**" />
+    <None Remove="DicomSCP.IntegrationTests\**" />
   </ItemGroup>
 
   <ItemGroup>
