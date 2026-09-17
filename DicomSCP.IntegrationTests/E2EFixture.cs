@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -77,11 +78,25 @@ public sealed class E2EFixture : IAsyncLifetime
         _server.BeginOutputReadLine();
         _server.BeginErrorReadLine();
 
-        var started = await WaitForPortsAsync(TimeSpan.FromSeconds(60));
+var started = await WaitForPortsAsync(TimeSpan.FromSeconds(60));
         if (!started)
         {
             throw new InvalidOperationException(
                 $"Server ports did not come up within 60s. Process exited={(HasExited() ? "yes" : "no")}. Log tail:\n{ReadLogTail(200)}");
+        }
+
+        await LoginAsync();
+    }
+
+    private async Task LoginAsync()
+    {
+        using var login = await Http.PostAsJsonAsync(
+            "/api/Auth/login",
+            new { username = "admin", password = "admin" });
+        if (!login.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"E2E admin login failed with {(int)login.StatusCode}. Log tail:\n{ReadLogTail(200)}");
         }
     }
 

@@ -11,6 +11,9 @@ services:
       - "11113:11113"    # WorklistSCP端口
       - "11114:11114"    # QRSCP端口
       - "11115:11115"    # PrintSCP端口
+      - "11116:11116"    # StorageCommitmentSCP端口
+      - "11117:11117"    # MppsSCP端口
+      - "11118:11118"    # UpsSCP端口
     volumes:
       - ./data/keys:/root/.aspnet/DataProtection-Keys
       - ./data/logs:/app/logs

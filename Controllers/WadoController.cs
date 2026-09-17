@@ -15,7 +15,6 @@ using System.Runtime;
 namespace DicomSCP.Controllers
 {
     [Route("wado")]
-    [AllowAnonymous]
     public class WadoURIController(
         DicomRepository dicomRepository,
         IOptions<DicomSettings> settings) : ControllerBase

@@ -8,7 +8,6 @@ using System.Xml.Linq;
 namespace DicomSCP.Controllers;
 
 [Route("viewer")]
-[AllowAnonymous]
 public class ViewerController(DicomRepository repository) : ControllerBase
 {
     private readonly DicomRepository _repository = repository;

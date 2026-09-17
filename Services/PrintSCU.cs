@@ -398,20 +398,18 @@ public class PrintSCU : IPrintSCU
             var file = await LoadDicomFileAsync(request.FilePath);
             var client = CreateClient(request.HostName, request.Port, _aeTitle, request.CalledAE);
 
+            var finalTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
             // 1. 创建 Film Session
             var filmSessionRequest = new DicomNCreateRequest(DicomUID.BasicFilmSession, DicomUID.Generate());
             filmSessionRequest.Dataset = CreateFilmSessionDataset(request);
 
-            DicomResponse? filmSessionResponse = null;
-            var filmSessionTcs = new TaskCompletionSource<bool>();
-            
             filmSessionRequest.OnResponseReceived = (req, res) =>
             {
-                filmSessionResponse = res;
                 if (res.Status.State != DicomState.Success)
                 {
                     DicomLogger.Error("PrintSCU", "创建 Film Session 失败: {Status}", res.Status);
-                    filmSessionTcs.SetResult(false);
+                    finalTcs.TrySetResult(false);
                     return;
                 }
 
@@ -421,9 +419,9 @@ public class PrintSCU : IPrintSCU
                 // 2. 创建 Film Box
                 var filmBoxRequest = new DicomNCreateRequest(DicomUID.BasicFilmBox, DicomUID.Generate());
                 filmBoxRequest.Dataset = CreateFilmBoxDataset(request);
-                filmBoxRequest.Dataset.Add(DicomTag.ReferencedFilmSessionSequence, new DicomDataset[] 
+                filmBoxRequest.Dataset.Add(DicomTag.ReferencedFilmSessionSequence, new DicomDataset[]
                 {
-                    new DicomDataset 
+                    new DicomDataset
                     {
                         { DicomTag.ReferencedSOPClassUID, DicomUID.BasicFilmSession },
                         { DicomTag.ReferencedSOPInstanceUID, filmSessionUid }
@@ -435,7 +433,7 @@ public class PrintSCU : IPrintSCU
                     if (fbRes.Status.State != DicomState.Success)
                     {
                         DicomLogger.Error("PrintSCU", "创建 Film Box 失败: {Status}", fbRes.Status);
-                        filmSessionTcs.SetResult(false);
+                        finalTcs.TrySetResult(false);
                         return;
                     }
 
@@ -443,7 +441,7 @@ public class PrintSCU : IPrintSCU
                     if (imageBoxSequence == null || !imageBoxSequence.Items.Any())
                     {
                         DicomLogger.Error("PrintSCU", "未找到 Image Box 引用");
-                        filmSessionTcs.SetResult(false);
+                        finalTcs.TrySetResult(false);
                         return;
                     }
 
@@ -460,7 +458,7 @@ public class PrintSCU : IPrintSCU
                         if (ibRes.Status.State != DicomState.Success)
                         {
                             DicomLogger.Error("PrintSCU", "设置 Image Box 失败: {Status}", ibRes.Status);
-                            filmSessionTcs.SetResult(false);
+                            finalTcs.TrySetResult(false);
                             return;
                         }
 
@@ -471,28 +469,33 @@ public class PrintSCU : IPrintSCU
                             if (pRes.Status.State != DicomState.Success)
                             {
                                 DicomLogger.Error("PrintSCU", "打印操作失败: {Status}", pRes.Status);
-                                filmSessionTcs.SetResult(false);
+                                finalTcs.TrySetResult(false);
                                 return;
                             }
-                            filmSessionTcs.SetResult(true);
+                            finalTcs.TrySetResult(true);
                         };
 
-                        client.AddRequestAsync(printRequest).Wait();
-                        client.SendAsync().Wait();
+                        SendNextAsync(client, printRequest, finalTcs);
                     };
 
-                    client.AddRequestAsync(imageBoxRequest).Wait();
-                    client.SendAsync().Wait();
+                    SendNextAsync(client, imageBoxRequest, finalTcs);
                 };
 
-                client.AddRequestAsync(filmBoxRequest).Wait();
-                client.SendAsync().Wait();
+                SendNextAsync(client, filmBoxRequest, finalTcs);
             };
 
-            await client.AddRequestAsync(filmSessionRequest);
-            await client.SendAsync();
+            try
+            {
+                await client.AddRequestAsync(filmSessionRequest);
+                await client.SendAsync();
+            }
+            catch (Exception ex)
+            {
+                DicomLogger.Error("PrintSCU", ex, "创建 Film Session 时发生错误");
+                return false;
+            }
 
-            var result = await filmSessionTcs.Task;
+            var result = await finalTcs.Task;
             if (result)
             {
                 DicomLogger.Information("PrintSCU", "打印任务已完成");
@@ -504,6 +507,23 @@ public class PrintSCU : IPrintSCU
             DicomLogger.Error("PrintSCU", ex, "打印过程中发生错误");
             return false;
         }
+    }
+
+    private static void SendNextAsync(IDicomClient client, DicomRequest request, TaskCompletionSource<bool> finalTcs)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await client.AddRequestAsync(request);
+                await client.SendAsync();
+            }
+            catch (Exception ex)
+            {
+                DicomLogger.Error("PrintSCU", ex, "发送DICOM打印请求失败");
+                finalTcs.TrySetResult(false);
+            }
+        });
     }
 } 
 

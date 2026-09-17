@@ -133,10 +133,27 @@ public class QueryRetrieveSCU : IQueryRetrieveSCU
             };
 
             await client.AddRequestAsync(request);
-            // 异步发送，不等待完成
-            _ = Task.Run(async () => await client.SendAsync());
 
-            return true;  // 立即返回
+            var moveLevel = level;
+            var moveTransferSyntax = transferSyntax;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await client.SendAsync();
+                    DicomLogger.Information("QueryRetrieveSCU",
+                        "{Level}级别C-MOVE传输完成 - TransferSyntax: {TransferSyntax}",
+                        moveLevel, moveTransferSyntax ?? "默认");
+                }
+                catch (Exception ex)
+                {
+                    DicomLogger.Error("QueryRetrieveSCU", ex,
+                        "{Level}级别C-MOVE传输异常 - TransferSyntax: {TransferSyntax}",
+                        moveLevel, moveTransferSyntax ?? "默认");
+                }
+            });
+
+            return true;
         }
         catch (Exception ex)
         {

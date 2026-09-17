@@ -277,20 +277,23 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseCors("AllowAll");  // CORS 应该在这里
 
-// 7. API 认证中间件
+// 7. 认证中间件（保护 API + DICOM 数据端点）
 app.Use(async (context, next) =>
 {
     var path = context.Request.Path.Value?.ToLower();
-    
-    // 只检查 API 路径的认证
-    if (path?.StartsWith("/api/") == true && 
-        !path.StartsWith("/api/auth/login") && 
-        !context.User.Identity?.IsAuthenticated == true)
+    var requiresAuth =
+        (path?.StartsWith("/api/") == true && !path.StartsWith("/api/auth/login")) ||
+        path?.StartsWith("/dicomweb") == true ||
+        path?.StartsWith("/wado") == true ||
+        path?.StartsWith("/viewer/ohif") == true ||
+        path?.StartsWith("/viewer/weasis") == true;
+
+    if (requiresAuth && context.User.Identity?.IsAuthenticated != true)
     {
         context.Response.StatusCode = 401;
         return;
     }
-    
+
     await next();
 });
 

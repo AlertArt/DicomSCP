@@ -20,7 +20,6 @@ namespace DicomSCP.Controllers;
 /// </summary>
 [Route("dicomweb")]
 [ApiController]
-[AllowAnonymous]
 public class DicomWebController(
     DicomRepository dicomRepository,
     DicomDatasetPersistence persistence,
