@@ -192,4 +192,25 @@ public static class DatabaseSchemaSql
                 ReferencedSopUids TEXT,
                 FOREIGN KEY(MppsId) REFERENCES MPPS(MppsId)
             )";
+
+    public const string CreateUpsWorkItemsTable = @"
+            CREATE TABLE IF NOT EXISTS UPSWorkItems (
+                SopInstanceUid TEXT PRIMARY KEY,
+                WorkItemLabel TEXT,
+                ProcedureStepState TEXT,
+                Priority TEXT,
+                Modality TEXT,
+                ScheduledAeTitle TEXT,
+                ScheduledStartDate TEXT,
+                ScheduledStartTime TEXT,
+                PatientName TEXT,
+                PatientId TEXT,
+                AccessionNumber TEXT,
+                RequestedProcedureId TEXT,
+                CalledAeTitle TEXT,
+                CallingAe TEXT,
+                DatasetJson TEXT,
+                CreateTime DATETIME,
+                UpdateTime DATETIME
+            )";
 }

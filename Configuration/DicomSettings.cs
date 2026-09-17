@@ -45,6 +45,8 @@ public class DicomSettings
 
     public MppsSCPSettings MppsSCP { get; set; } = new();
 
+    public UpsSCPSettings UpsSCP { get; set; } = new();
+
     public PrintScuConfig? PrintSCU { get; set; }
     
     public List<PrinterConfig> Printers { get; set; } = new();
@@ -127,6 +129,25 @@ public class MppsSCPSettings
     [Range(1, 65535)]
     public int Port { get; set; } = 11117;
 
+public bool ValidateCallingAE { get; set; } = false;
+    public string[] AllowedCallingAEs { get; set; } = Array.Empty<string>();
+}
+
+/// <summary>
+/// 统一程序步骤（UPS）服务设置。GPWL（通用用途工作清单，RETIRED）已被 UPS 取代，不再单独提供。
+/// </summary>
+public class UpsSCPSettings
+{
+    [Required]
+    [RegularExpression(@"^[A-Za-z0-9\-_]{1,16}$")]
+    public string AeTitle { get; set; } = "UPSSCP";
+
+    [Range(1, 65535)]
+    public int Port { get; set; } = 11118;
+
     public bool ValidateCallingAE { get; set; } = false;
     public string[] AllowedCallingAEs { get; set; } = Array.Empty<string>();
-} 
+
+    /// <summary>推送 N-EVENT-REPORT 时使用的重连尝试次数（默认 3 次）。</summary>
+    public int PushRetryCount { get; set; } = 3;
+}

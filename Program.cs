@@ -122,6 +122,7 @@ builder.Services.AddSingleton<StudyBasicInfoRepository>();
 builder.Services.AddSingleton<PrintRepository>();
 builder.Services.AddSingleton<StorageCommitmentRepository>();
 builder.Services.AddSingleton<MppsRepository>();
+builder.Services.AddSingleton<UpsRepository>();
 builder.Services.AddSingleton<UserRepository>();
 builder.Services.AddSingleton<DicomDatasetPersistence>();
 builder.Services.AddSingleton<DicomServer>();

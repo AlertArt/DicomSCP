@@ -192,3 +192,37 @@ public class MppsSeriesRecord
     public string? OperatorName { get; set; }
     public string? ReferencedSopUids { get; set; }
 }
+
+/// <summary>统一程序步骤（Unified Procedure Step）工作项，对应表 UPSWorkItems。</summary>
+public class UpsWorkItem
+{
+    public string SopInstanceUid { get; set; } = string.Empty;
+    public string? WorkItemLabel { get; set; }
+    public string? ProcedureStepState { get; set; }
+    public string? Priority { get; set; }
+    public string? Modality { get; set; }
+    public string? ScheduledAeTitle { get; set; }
+    public string? ScheduledStartDate { get; set; }
+    public string? ScheduledStartTime { get; set; }
+    public string? PatientName { get; set; }
+    public string? PatientId { get; set; }
+    public string? AccessionNumber { get; set; }
+    public string? RequestedProcedureId { get; set; }
+    public string? CalledAeTitle { get; set; }
+    public string? CallingAe { get; set; }
+    /// <summary>完整 UPS 数据集（DICOM JSON），用于 N-GET 精确回读。</summary>
+    public string? DatasetJson { get; set; }
+    public DateTime CreateTime { get; set; } = DateTime.Now;
+    public DateTime UpdateTime { get; set; } = DateTime.Now;
+}
+
+/// <summary>UPS 订阅者（Subscription，内存态即可）。</summary>
+public class UpsSubscriber
+{
+    public string AeTitle { get; set; } = string.Empty;
+    public string Host { get; set; } = string.Empty;
+    public int Port { get; set; }
+    public string? RemEmail { get; set; }
+    public string? CallbackHost { get; set; }
+    public DateTime SubscribeTime { get; set; } = DateTime.Now;
+}
