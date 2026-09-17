@@ -329,18 +329,8 @@ public class StorageCommitmentSCP : DicomService, IDicomServiceProvider, IDicomN
 
     private DicomNActionResponse CreateActionResponse(DicomNActionRequest request)
     {
-        var response = new DicomNActionResponse(request, DicomStatus.Success);
-        var command = new DicomDataset
-        {
-            { DicomTag.AffectedSOPClassUID, DicomUID.StorageCommitmentPushModel },
-            { DicomTag.CommandField, (ushort)0x8131 }, // N-ACTION-RSP
-            { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-            { DicomTag.CommandDataSetType, (ushort)0x0101 }, // 无数据集
-            { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-            { DicomTag.AffectedSOPInstanceUID, DicomUID.StorageCommitmentPushModelInstance }
-        };
-        SetCommandDataset(response, command);
-        return response;
+        // 默认响应会自动从请求回显 AffectedSOPClassUID / AffectedSOPInstanceUID 与 MessageIDBeingRespondedTo
+        return new DicomNActionResponse(request, DicomStatus.Success);
     }
 
     private async Task PushEventReportAsync(
@@ -448,21 +438,6 @@ public class StorageCommitmentSCP : DicomService, IDicomServiceProvider, IDicomN
                 }
                 await Task.Delay(TimeSpan.FromSeconds(2 * attempt));
             }
-        }
-    }
-
-    private static void SetCommandDataset(DicomResponse response, DicomDataset command)
-    {
-        try
-        {
-            var commandProperty = typeof(DicomMessage).GetProperty("Command",
-                System.Reflection.BindingFlags.Public |
-                System.Reflection.BindingFlags.Instance);
-            commandProperty?.SetValue(response, command);
-        }
-        catch (Exception ex)
-        {
-            DicomLogger.Error("StorageCommitmentSCP", ex, "设置命令数据集时发生错误");
         }
     }
 }

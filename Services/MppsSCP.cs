@@ -240,7 +240,9 @@ public class MppsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvid
 
     private MppsRecord BuildRecord(string mppsId, DicomDataset dataset, bool create)
     {
-        var scheduledStep = dataset.GetSequence(DicomTag.ScheduledStepAttributesSequence)?.Items.FirstOrDefault();
+        var scheduledStep = dataset.TryGetSequence(DicomTag.ScheduledStepAttributesSequence, out var scheduledSeq)
+            ? scheduledSeq?.Items.FirstOrDefault()
+            : null;
 
         var record = new MppsRecord
         {
@@ -260,7 +262,10 @@ public class MppsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvid
             CreateTime = create ? DateTime.Now : DateTime.MinValue
         };
 
-        var discontinuation = dataset.GetSequence(DicomTag.PerformedProcedureStepDiscontinuationReasonCodeSequence)?.Items.FirstOrDefault();
+        var discontinuation = dataset.TryGetSequence(DicomTag.PerformedProcedureStepDiscontinuationReasonCodeSequence, out var discSeq)
+            && discSeq?.Items.FirstOrDefault() != null
+            ? discSeq.Items.First()
+            : null;
         if (discontinuation != null)
         {
             var codeMeaning = discontinuation.GetSingleValueOrDefault<string>(DicomTag.CodeMeaning, string.Empty);
@@ -286,8 +291,7 @@ public class MppsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvid
     private static List<MppsSeriesRecord> ExtractSeries(DicomDataset dataset)
     {
         var result = new List<MppsSeriesRecord>();
-        var seriesSequence = dataset.GetSequence(DicomTag.PerformedSeriesSequence);
-        if (seriesSequence == null)
+        if (!dataset.TryGetSequence(DicomTag.PerformedSeriesSequence, out var seriesSequence))
         {
             return result;
         }
@@ -295,8 +299,7 @@ public class MppsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvid
         foreach (var item in seriesSequence.Items)
         {
             var referencedSops = new List<string>();
-            var imageSeq = item.GetSequence(DicomTag.ReferencedImageSequence);
-            if (imageSeq != null)
+            if (item.TryGetSequence(DicomTag.ReferencedImageSequence, out var imageSeq))
             {
                 foreach (var refItem in imageSeq.Items)
                 {
@@ -304,8 +307,7 @@ public class MppsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvid
                     if (!string.IsNullOrEmpty(uid)) referencedSops.Add(uid);
                 }
             }
-            var nonImageSeq = item.GetSequence(DicomTag.ReferencedNonImageCompositeSOPInstanceSequence);
-            if (nonImageSeq != null)
+            if (item.TryGetSequence(DicomTag.ReferencedNonImageCompositeSOPInstanceSequence, out var nonImageSeq))
             {
                 foreach (var refItem in nonImageSeq.Items)
                 {
@@ -332,47 +334,20 @@ public class MppsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvid
     private DicomNCreateResponse CreateCreateResponse(DicomNCreateRequest request)
     {
         var response = new DicomNCreateResponse(request, DicomStatus.Success);
-        var command = new DicomDataset
+        if (!string.IsNullOrEmpty(request.SOPInstanceUID?.UID))
         {
-            { DicomTag.AffectedSOPClassUID, DicomUID.ModalityPerformedProcedureStep },
-            { DicomTag.CommandField, (ushort)0x8141 }, // N-CREATE-RSP
-            { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-            { DicomTag.CommandDataSetType, (ushort)0x0101 }, // 无数据集
-            { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-            { DicomTag.AffectedSOPInstanceUID, request.SOPInstanceUID }
-        };
-        SetCommandDataset(response, command);
+            response.Command.AddOrUpdate(DicomTag.AffectedSOPInstanceUID, request.SOPInstanceUID.UID);
+        }
         return response;
     }
 
     private DicomNSetResponse CreateSetResponse(DicomNSetRequest request)
     {
         var response = new DicomNSetResponse(request, DicomStatus.Success);
-        var command = new DicomDataset
+        if (!string.IsNullOrEmpty(request.SOPInstanceUID?.UID))
         {
-            { DicomTag.AffectedSOPClassUID, DicomUID.ModalityPerformedProcedureStep },
-            { DicomTag.CommandField, (ushort)0x8121 }, // N-SET-RSP
-            { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-            { DicomTag.CommandDataSetType, (ushort)0x0101 }, // 无数据集
-            { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-            { DicomTag.AffectedSOPInstanceUID, request.SOPInstanceUID }
-        };
-        SetCommandDataset(response, command);
+            response.Command.AddOrUpdate(DicomTag.AffectedSOPInstanceUID, request.SOPInstanceUID.UID);
+        }
         return response;
-    }
-
-    private static void SetCommandDataset(DicomResponse response, DicomDataset command)
-    {
-        try
-        {
-            var commandProperty = typeof(DicomMessage).GetProperty("Command",
-                System.Reflection.BindingFlags.Public |
-                System.Reflection.BindingFlags.Instance);
-            commandProperty?.SetValue(response, command);
-        }
-        catch (Exception ex)
-        {
-            DicomLogger.Error("MppsSCP", ex, "设置命令数据集时发生错误");
-        }
     }
 }

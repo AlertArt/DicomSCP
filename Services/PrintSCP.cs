@@ -253,17 +253,7 @@ public class PrintSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvi
                 response.Dataset = responseDataset;
             }
 
-            var command = new DicomDataset
-            {
-                { DicomTag.AffectedSOPClassUID, DicomUID.BasicFilmSession },
-                { DicomTag.CommandField, (ushort)0x8140 },
-                { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-                { DicomTag.CommandDataSetType, (ushort)0x0102 },
-                { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-                { DicomTag.AffectedSOPInstanceUID, filmSessionId }
-            };
-
-            SetCommandDataset(response, command);
+            response.Command.AddOrUpdate(DicomTag.AffectedSOPInstanceUID, filmSessionId);
 
             _session.FilmSession = new DicomFilmSession(request.Dataset)
             {
@@ -372,17 +362,7 @@ public class PrintSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvi
             var response = new DicomNCreateResponse(request, DicomStatus.Success);
             response.Dataset = responseDataset;
 
-            var command = new DicomDataset
-            {
-                { DicomTag.AffectedSOPClassUID, request.SOPClassUID },
-                { DicomTag.CommandField, (ushort)0x8140 },
-                { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-                { DicomTag.CommandDataSetType, (ushort)0x0102 },
-                { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-                { DicomTag.AffectedSOPInstanceUID, filmBoxId }
-            };
-
-            SetCommandDataset(response, command);
+            response.Command.AddOrUpdate(DicomTag.AffectedSOPInstanceUID, filmBoxId);
 
             _session.CurrentFilmBox = new DicomFilmBox(request.Dataset)
             {
@@ -949,48 +929,13 @@ public class PrintSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvi
         try
         {
             var response = new DicomNActionResponse(request, DicomStatus.Success);
-            var command = new DicomDataset
-            {
-                // 必需的命令集元素 (Type 1)
-                { DicomTag.AffectedSOPClassUID, request.SOPClassUID },
-                { DicomTag.CommandField, (ushort)0x8130 },  // N-ACTION-RSP
-                { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-                { DicomTag.CommandDataSetType, (ushort)0x0101 },  // 无数据集
-                { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-                { DicomTag.AffectedSOPInstanceUID, request.SOPInstanceUID },
-                { DicomTag.ActionTypeID, request.ActionTypeID }
-            };
 
-            SetCommandDataset(response, command);
             return response;
         }
         catch (Exception ex)
         {
             DicomLogger.Error("PrintSCP", ex, "创建响应时发生错误");
             return new DicomNActionResponse(request, DicomStatus.ProcessingFailure);
-        }
-    }
-
-    private void SetCommandDataset(DicomResponse response, DicomDataset command)
-    {
-        try
-        {
-            var commandProperty = typeof(DicomMessage).GetProperty("Command", 
-                System.Reflection.BindingFlags.Public | 
-                System.Reflection.BindingFlags.Instance);
-
-            if (commandProperty != null)
-            {
-                commandProperty.SetValue(response, command);
-            }
-            else
-            {
-                DicomLogger.Error("PrintSCP", "无法设置命令数据集：Command属性不存在");
-            }
-        }
-        catch (Exception ex)
-        {
-            DicomLogger.Error("PrintSCP", ex, "设置命令数据集时发生错误");
         }
     }
 
@@ -1006,18 +951,6 @@ public class PrintSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvi
             }
 
             var response = new DicomNDeleteResponse(request, DicomStatus.Success);
-            var command = new DicomDataset
-            {
-                // 必需的命令集元素 (Type 1)
-                { DicomTag.AffectedSOPClassUID, request.SOPClassUID },
-                { DicomTag.CommandField, (ushort)0x8150 },  // N-DELETE-RSP
-                { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-                { DicomTag.CommandDataSetType, (ushort)0x0101 },  // 无数据集
-                { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-                { DicomTag.AffectedSOPInstanceUID, request.SOPInstanceUID }
-            };
-
-            SetCommandDataset(response, command);
 
             if (request.SOPClassUID == DicomUID.BasicFilmSession)
             {
@@ -1061,19 +994,7 @@ public class PrintSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvi
         try
         {
             var response = new DicomNEventReportResponse(request, DicomStatus.Success);
-            var command = new DicomDataset
-            {
-                // 必需的命令集元素 (Type 1)
-                { DicomTag.AffectedSOPClassUID, request.SOPClassUID },
-                { DicomTag.CommandField, (ushort)0x8110 },  // N-EVENT-REPORT-RSP
-                { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-                { DicomTag.CommandDataSetType, (ushort)0x0101 },  // 无数据集
-                { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-                { DicomTag.AffectedSOPInstanceUID, request.SOPInstanceUID },
-                { DicomTag.EventTypeID, request.EventTypeID }
-            };
 
-            SetCommandDataset(response, command);
             return Task.FromResult(response);
         }
         catch (Exception ex)
@@ -1088,18 +1009,7 @@ public class PrintSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvi
         try
         {
             var response = new DicomNGetResponse(request, DicomStatus.Success);
-            var command = new DicomDataset
-            {
-                // 必需的命令集元素 (Type 1)
-                { DicomTag.AffectedSOPClassUID, request.SOPClassUID },
-                { DicomTag.CommandField, (ushort)0x8110 },  // N-GET-RSP
-                { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-                { DicomTag.CommandDataSetType, (ushort)0x0101 },  // 无数据集
-                { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-                { DicomTag.AffectedSOPInstanceUID, request.SOPInstanceUID }
-            };
 
-            SetCommandDataset(response, command);
             return Task.FromResult(response);
         }
         catch (Exception ex)

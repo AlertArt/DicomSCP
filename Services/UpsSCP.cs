@@ -204,16 +204,7 @@ public class UpsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvide
             DicomLogger.Information("UpsSCP", "UPS 工作项已创建 - {SopInstanceUid}", sopInstanceUid);
 
             var response = new DicomNCreateResponse(request, DicomStatus.Success);
-            var command = new DicomDataset
-            {
-                { DicomTag.AffectedSOPClassUID, DicomUID.UnifiedProcedureStepPush },
-                { DicomTag.CommandField, (ushort)0x8141 }, // N-CREATE-RSP
-                { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-                { DicomTag.CommandDataSetType, (ushort)0x0101 }, // 无数据集
-                { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-                { DicomTag.AffectedSOPInstanceUID, sopInstanceUid }
-            };
-            SetCommandDataset(response, command);
+            response.Command.AddOrUpdate(DicomTag.AffectedSOPInstanceUID, sopInstanceUid);
             return response;
         }
         catch (Exception ex)
@@ -265,16 +256,7 @@ public class UpsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvide
             _ = Task.Run(() => PushStateChangedNotificationAsync(updated));
 
             var response = new DicomNSetResponse(request, DicomStatus.Success);
-            var command = new DicomDataset
-            {
-                { DicomTag.AffectedSOPClassUID, DicomUID.UnifiedProcedureStepPush },
-                { DicomTag.CommandField, (ushort)0x8121 }, // N-SET-RSP
-                { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-                { DicomTag.CommandDataSetType, (ushort)0x0101 }, // 无数据集
-                { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-                { DicomTag.AffectedSOPInstanceUID, sopInstanceUid }
-            };
-            SetCommandDataset(response, command);
+            response.Command.AddOrUpdate(DicomTag.AffectedSOPInstanceUID, sopInstanceUid);
             return response;
         }
         catch (Exception ex)
@@ -321,16 +303,7 @@ public class UpsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvide
             {
                 Dataset = dataset
             };
-            var command = new DicomDataset
-            {
-                { DicomTag.AffectedSOPClassUID, DicomUID.UnifiedProcedureStepPush },
-                { DicomTag.CommandField, (ushort)0x8122 }, // N-GET-RSP
-                { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-                { DicomTag.CommandDataSetType, (ushort)0x0002 }, // 有数据集
-                { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-                { DicomTag.AffectedSOPInstanceUID, sopInstanceUid }
-            };
-            SetCommandDataset(response, command);
+            response.Command.AddOrUpdate(DicomTag.AffectedSOPInstanceUID, sopInstanceUid);
             return response;
         }
         catch (Exception ex)
@@ -378,16 +351,7 @@ public class UpsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvide
             DicomLogger.Information("UpsSCP", "UPS 已删除 - {SopInstanceUid}", sopInstanceUid);
 
             var response = new DicomNDeleteResponse(request, DicomStatus.Success);
-            var command = new DicomDataset
-            {
-                { DicomTag.AffectedSOPClassUID, DicomUID.UnifiedProcedureStepPush },
-                { DicomTag.CommandField, (ushort)0x8123 }, // N-DELETE-RSP
-                { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-                { DicomTag.CommandDataSetType, (ushort)0x0101 }, // 无数据集
-                { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-                { DicomTag.AffectedSOPInstanceUID, sopInstanceUid }
-            };
-            SetCommandDataset(response, command);
+            response.Command.AddOrUpdate(DicomTag.AffectedSOPInstanceUID, sopInstanceUid);
             return response;
         }
         catch (Exception ex)
@@ -532,16 +496,7 @@ public class UpsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvide
     private DicomNActionResponse CreateActionSuccessResponse(DicomNActionRequest request, string targetUid)
     {
         var response = new DicomNActionResponse(request, DicomStatus.Success);
-        var command = new DicomDataset
-        {
-            { DicomTag.AffectedSOPClassUID, DicomUID.UnifiedProcedureStepWatch },
-            { DicomTag.CommandField, (ushort)0x8131 }, // N-ACTION-RSP
-            { DicomTag.MessageIDBeingRespondedTo, request.MessageID },
-            { DicomTag.CommandDataSetType, (ushort)0x0101 }, // 无数据集
-            { DicomTag.Status, (ushort)DicomStatus.Success.Code },
-            { DicomTag.AffectedSOPInstanceUID, targetUid }
-        };
-        SetCommandDataset(response, command);
+        response.Command.AddOrUpdate(DicomTag.AffectedSOPInstanceUID, targetUid);
         return response;
     }
 
@@ -563,7 +518,9 @@ public class UpsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvide
         if (string.IsNullOrEmpty(station))
         {
             // 也尝试从 Scheduled Procedure Step Attributes 序列中读取
-            var seq = dataset.GetSequence(DicomTag.ScheduledStepAttributesSequence);
+            var seq = dataset.TryGetSequence(DicomTag.ScheduledStepAttributesSequence, out var schedSeq)
+                ? schedSeq
+                : null;
             station = GetNullable(seq?.Items.FirstOrDefault(), DicomTag.ScheduledStationAETitle);
         }
 
@@ -572,10 +529,15 @@ public class UpsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvide
         if (string.IsNullOrEmpty(patientName) || string.IsNullOrEmpty(patientId))
         {
             // 患者信息可能位于 RequestAttributes 序列中
-            var refSeq = dataset.GetSequence(new DicomTag(0x0040, 0x0275))?
-                .Items.FirstOrDefault()?
-                .GetSequence(DicomTag.RequestAttributesSequence)?
-                .Items.FirstOrDefault();
+            DicomDataset? refSeq = null;
+            if (dataset.TryGetSequence(new DicomTag(0x0040, 0x0275), out var requestSeq))
+            {
+                var requestItem = requestSeq?.Items.FirstOrDefault();
+                if (requestItem != null && requestItem.TryGetSequence(DicomTag.RequestAttributesSequence, out var attrs))
+                {
+                    refSeq = attrs?.Items.FirstOrDefault();
+                }
+            }
             if (refSeq != null)
             {
                 patientName = GetNullable(refSeq, DicomTag.PatientName);
@@ -707,21 +669,6 @@ public class UpsSCP : DicomService, IDicomServiceProvider, IDicomNServiceProvide
                 }
                 await Task.Delay(TimeSpan.FromSeconds(2 * attempt));
             }
-        }
-    }
-
-    private static void SetCommandDataset(DicomResponse response, DicomDataset command)
-    {
-        try
-        {
-            var commandProperty = typeof(DicomMessage).GetProperty("Command",
-                System.Reflection.BindingFlags.Public |
-                System.Reflection.BindingFlags.Instance);
-            commandProperty?.SetValue(response, command);
-        }
-        catch (Exception ex)
-        {
-            DicomLogger.Error("UpsSCP", ex, "设置命令数据集时发生错误");
         }
     }
 }
