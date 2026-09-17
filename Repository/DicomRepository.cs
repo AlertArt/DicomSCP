@@ -1,5 +1,6 @@
 using Dapper;
 using DicomSCP.Models;
+using FellowOakDicom;
 using Microsoft.Data.Sqlite;
 
 namespace DicomSCP.Repository;
@@ -311,5 +312,238 @@ public class DicomRepository(IConfiguration configuration)
                      s.SeriesDate, s.CreateTime";
 
         return await connection.QueryAsync<Series>(sql, new { StudyInstanceUid = studyInstanceUid });
+    }
+
+    // ── QIDO-RS (DICOMweb) 查询支持 ─────────────────────────────────────────
+    // 为 QIDO-RS 提供 Study / Series / Instance 三种层级的属性过滤查询。
+    // 数据库仅持久化常用标签，因此未知标签会被静默忽略（符合 PS3.18 QIDO-RS 约定）。
+
+    public List<Study> QidoQueryStudies(IReadOnlyDictionary<DicomTag, IReadOnlyList<string>> matches, bool fuzzy, int? offset, int? limit)
+    {
+        try
+        {
+            using var connection = CreateConnection();
+            var (whereSql, parameters) = BuildQidoWhere(QidoStudyColumns, matches, fuzzy);
+
+            var sql = $@"
+                SELECT 
+                    s.*,
+                    p.PatientName,
+                    p.PatientSex,
+                    p.PatientBirthDate,
+                    COUNT(DISTINCT ser.SeriesInstanceUid) as NumberOfStudyRelatedSeries,
+                    COUNT(DISTINCT i.SopInstanceUid) as NumberOfStudyRelatedInstances
+                FROM Studies s
+                LEFT JOIN Patients p ON s.PatientId = p.PatientId
+                LEFT JOIN Series ser ON s.StudyInstanceUid = ser.StudyInstanceUid
+                LEFT JOIN Instances i ON ser.SeriesInstanceUid = i.SeriesInstanceUid
+                WHERE 1=1 {whereSql}
+                GROUP BY 
+                    s.StudyInstanceUid, s.PatientId, s.StudyDate, s.StudyTime, s.StudyDescription,
+                    s.AccessionNumber, s.Modality, s.InstitutionName, s.Remark, s.CreateTime,
+                    p.PatientName, p.PatientSex, p.PatientBirthDate
+                ORDER BY s.CreateTime DESC";
+
+            if (offset.HasValue && limit.HasValue)
+            {
+                sql += " LIMIT @QidoLimit OFFSET @QidoOffset";
+                parameters.Add("@QidoLimit", limit.Value);
+                parameters.Add("@QidoOffset", offset.Value);
+            }
+
+            var result = connection.Query<Study>(sql, parameters).ToList();
+            LogInformation("QIDO Study查询完成 - 返回记录数: {Count}", result.Count);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            LogError(ex, "QIDO Study查询失败");
+            return [];
+        }
+    }
+
+    public List<Series> QidoQuerySeries(string studyInstanceUid, IReadOnlyDictionary<DicomTag, IReadOnlyList<string>> matches, bool fuzzy, int? offset, int? limit)
+    {
+        try
+        {
+            using var connection = CreateConnection();
+            var (whereSql, parameters) = BuildQidoWhere(QidoSeriesColumns, matches, fuzzy);
+
+            var sql = $@"
+                SELECT se.*, COUNT(i.SopInstanceUid) as NumberOfInstances
+                FROM Series se
+                LEFT JOIN Instances i ON se.SeriesInstanceUid = i.SeriesInstanceUid
+                WHERE se.StudyInstanceUid = @QidoStudyInstanceUid {whereSql}
+                GROUP BY se.SeriesInstanceUid, se.StudyInstanceUid, se.Modality, se.SeriesNumber,
+                         se.SeriesDescription, se.SliceThickness, se.SeriesDate, se.CreateTime
+                ORDER BY CAST(se.SeriesNumber as INTEGER)";
+
+            parameters.Add("@QidoStudyInstanceUid", studyInstanceUid);
+            if (offset.HasValue && limit.HasValue)
+            {
+                sql += " LIMIT @QidoLimit OFFSET @QidoOffset";
+                parameters.Add("@QidoLimit", limit.Value);
+                parameters.Add("@QidoOffset", offset.Value);
+            }
+
+            var result = connection.Query<Series>(sql, parameters).ToList();
+            LogInformation("QIDO Series查询完成 - Study: {StudyInstanceUid}, 返回记录数: {Count}", studyInstanceUid, result.Count);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            LogError(ex, "QIDO Series查询失败 - Study: {StudyInstanceUid}", studyInstanceUid);
+            return [];
+        }
+    }
+
+    public List<Instance> QidoQueryInstances(string studyInstanceUid, string seriesInstanceUid, IReadOnlyDictionary<DicomTag, IReadOnlyList<string>> matches, bool fuzzy, int? offset, int? limit)
+    {
+        try
+        {
+            using var connection = CreateConnection();
+            var (whereSql, parameters) = BuildQidoWhere(QidoInstanceColumns, matches, fuzzy);
+
+            var sql = $@"
+                SELECT i.*, se.StudyInstanceUid, se.Modality
+                FROM Instances i
+                INNER JOIN Series se ON i.SeriesInstanceUid = se.SeriesInstanceUid
+                WHERE se.StudyInstanceUid = @QidoStudyInstanceUid 
+                  AND i.SeriesInstanceUid = @QidoSeriesInstanceUid {whereSql}
+                ORDER BY CAST(i.InstanceNumber as INTEGER)";
+
+            parameters.Add("@QidoStudyInstanceUid", studyInstanceUid);
+            parameters.Add("@QidoSeriesInstanceUid", seriesInstanceUid);
+            if (offset.HasValue && limit.HasValue)
+            {
+                sql += " LIMIT @QidoLimit OFFSET @QidoOffset";
+                parameters.Add("@QidoLimit", limit.Value);
+                parameters.Add("@QidoOffset", offset.Value);
+            }
+
+            var result = connection.Query<Instance>(sql, parameters).ToList();
+            LogInformation("QIDO Instance查询完成 - Study: {StudyInstanceUid}, Series: {SeriesInstanceUid}, 返回记录数: {Count}",
+                studyInstanceUid, seriesInstanceUid, result.Count);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            LogError(ex, "QIDO Instance查询失败 - Study: {StudyInstanceUid}, Series: {SeriesInstanceUid}", studyInstanceUid, seriesInstanceUid);
+            return [];
+        }
+    }
+
+    /// <summary>将 QIDO 请求中的 DICOM 标签映射到数据库列并构造 SQL 过滤条件。</summary>
+    private static readonly Dictionary<DicomTag, string> QidoStudyColumns = new()
+    {
+        [DicomTag.PatientID] = "p.PatientId",
+        [DicomTag.PatientName] = "p.PatientName",
+        [DicomTag.PatientBirthDate] = "p.PatientBirthDate",
+        [DicomTag.PatientSex] = "p.PatientSex",
+        [DicomTag.StudyInstanceUID] = "s.StudyInstanceUid",
+        [DicomTag.StudyDate] = "s.StudyDate",
+        [DicomTag.StudyTime] = "s.StudyTime",
+        [DicomTag.AccessionNumber] = "s.AccessionNumber",
+        [DicomTag.StudyDescription] = "s.StudyDescription",
+        [DicomTag.ModalitiesInStudy] = "s.Modality",
+        [DicomTag.Modality] = "s.Modality",
+        [DicomTag.InstitutionName] = "s.InstitutionName"
+    };
+
+    private static readonly Dictionary<DicomTag, string> QidoSeriesColumns = new()
+    {
+        [DicomTag.SeriesInstanceUID] = "se.SeriesInstanceUid",
+        [DicomTag.StudyInstanceUID] = "se.StudyInstanceUid",
+        [DicomTag.Modality] = "se.Modality",
+        [DicomTag.SeriesNumber] = "se.SeriesNumber",
+        [DicomTag.SeriesDescription] = "se.SeriesDescription",
+        [DicomTag.SliceThickness] = "se.SliceThickness",
+        [DicomTag.SeriesDate] = "se.SeriesDate"
+    };
+
+    private static readonly Dictionary<DicomTag, string> QidoInstanceColumns = new()
+    {
+        [DicomTag.SOPInstanceUID] = "i.SopInstanceUid",
+        [DicomTag.SOPClassUID] = "i.SopClassUid",
+        [DicomTag.SeriesInstanceUID] = "i.SeriesInstanceUid",
+        [DicomTag.InstanceNumber] = "i.InstanceNumber",
+        [DicomTag.Rows] = "i.Rows",
+        [DicomTag.Columns] = "i.Columns",
+        [DicomTag.BitsAllocated] = "i.BitsAllocated",
+        [DicomTag.BitsStored] = "i.BitsStored",
+        [DicomTag.HighBit] = "i.HighBit",
+        [DicomTag.PixelRepresentation] = "i.PixelRepresentation",
+        [DicomTag.SamplesPerPixel] = "i.SamplesPerPixel",
+        [DicomTag.PhotometricInterpretation] = "i.PhotometricInterpretation",
+        [DicomTag.PixelSpacing] = "i.PixelSpacing",
+        [DicomTag.ImageOrientationPatient] = "i.ImageOrientationPatient",
+        [DicomTag.ImagePositionPatient] = "i.ImagePositionPatient",
+        [DicomTag.FrameOfReferenceUID] = "i.FrameOfReferenceUID",
+        [DicomTag.ImageType] = "i.ImageType",
+        [DicomTag.WindowCenter] = "i.WindowCenter",
+        [DicomTag.WindowWidth] = "i.WindowWidth"
+    };
+
+    /// <summary>将 QIDO 请求中的 DICOM 标签映射到数据库列并构造 SQL 过滤条件。</summary>
+    private static (string WhereSql, DynamicParameters Parameters) BuildQidoWhere(
+        Dictionary<DicomTag, string> columnMap,
+        IReadOnlyDictionary<DicomTag, IReadOnlyList<string>> matches,
+        bool fuzzy)
+    {
+        var clauses = new List<string>();
+        var parameters = new DynamicParameters();
+        var index = 0;
+
+        foreach (var kv in matches)
+        {
+            if (!columnMap.TryGetValue(kv.Key, out var column))
+            {
+                continue;
+            }
+
+            foreach (var rawValue in kv.Value)
+            {
+                if (string.IsNullOrEmpty(rawValue)) continue;
+
+                // 日期范围支持 "开始-结束"、"开始-" 与 "-结束"
+                if (kv.Key == DicomTag.StudyDate && rawValue.Contains('-'))
+                {
+                    var parts = rawValue.Split('-');
+                    var start = parts.Length > 0 ? parts[0].Trim() : "";
+                    var end = parts.Length > 1 ? parts[1].Trim() : "";
+                    if (start.Length > 0)
+                    {
+                        var p = $"@QidoP{index++}";
+                        clauses.Add($"{column} >= {p}");
+                        parameters.Add(p, start);
+                    }
+                    if (end.Length > 0)
+                    {
+                        var p = $"@QidoP{index++}";
+                        clauses.Add($"{column} <= {p}");
+                        parameters.Add(p, end);
+                    }
+                    continue;
+                }
+
+                var paramName = $"@QidoP{index++}";
+                // 模糊匹配或含通配符时做子串匹配（DICOM 通配符 * 映射为 SQL %）；否则严格匹配
+                var likeValue = rawValue.Replace("*", "%");
+                if (fuzzy || likeValue.Contains('%'))
+                {
+                    clauses.Add($"{column} LIKE {paramName} ESCAPE '\\'");
+                    var escaped = likeValue.Replace("\\", "\\\\").Replace("%", $"%");
+                    parameters.Add(paramName, $"%{escaped.Trim('%')}%");
+                }
+                else
+                {
+                    clauses.Add($"{column} = {paramName}");
+                    parameters.Add(paramName, likeValue);
+                }
+            }
+        }
+
+        var whereSql = clauses.Count > 0 ? " AND " + string.Join(" AND ", clauses) : string.Empty;
+        return (whereSql, parameters);
     }
 }

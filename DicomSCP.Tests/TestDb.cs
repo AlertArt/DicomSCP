@@ -53,7 +53,9 @@ public static class DicomTestData
         string sopUid = "1.2.840.113619.2.1.1.3",
         string studyDate = "20240101",
         string modality = "CT",
-        string accession = "ACC001")
+        string accession = "ACC001",
+        string seriesNumber = "1",
+        string instanceNumber = "1")
     {
         var ds = new DicomDataset();
         ds.AddOrUpdate(DicomTag.PatientID, patientId);
@@ -67,8 +69,8 @@ public static class DicomTestData
         ds.AddOrUpdate(DicomTag.StudyDate, studyDate);
         ds.AddOrUpdate(DicomTag.Modality, modality);
         ds.AddOrUpdate(DicomTag.AccessionNumber, accession);
-        ds.AddOrUpdate(DicomTag.SeriesNumber, "1");
-        ds.AddOrUpdate(DicomTag.InstanceNumber, "1");
+        ds.AddOrUpdate(DicomTag.SeriesNumber, seriesNumber);
+        ds.AddOrUpdate(DicomTag.InstanceNumber, instanceNumber);
         return ds;
     }
 }

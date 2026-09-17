@@ -49,6 +49,7 @@ public class Instance
     public string SopInstanceUid { get; set; } = null!;
     public string SeriesInstanceUid { get; set; } = null!;
     public string SopClassUid { get; set; } = null!;
+    public string StudyInstanceUid { get; set; } = string.Empty;
     public string? InstanceNumber { get; set; }
     public string FilePath { get; set; } = null!;
     public int Columns { get; set; }

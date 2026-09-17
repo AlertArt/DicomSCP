@@ -113,6 +113,48 @@ public sealed class DicomDatasetPersistence : IDisposable
         }
     }
 
+    /// <summary>
+    /// 立即同步入库（绕过异步队列），供 STOW-RS 等需要请求完成后即可被
+    /// QIDO-RS/WADO-RS 查询到的场景使用。
+    /// </summary>
+    public async Task<WriteResult> SaveDicomDataImmediateAsync(DicomDataset dataset, string filePath)
+    {
+        return await SaveDicomDataImmediateAsync(new[] { (dataset, filePath) });
+    }
+
+    public async Task<WriteResult> SaveDicomDataImmediateAsync(IEnumerable<(DicomDataset Dataset, string FilePath)> items)
+    {
+        var itemList = items.ToList();
+        if (itemList.Count == 0)
+        {
+            return new WriteResult(0, 0, 0, 0);
+        }
+
+        var batchData = BuildBatchData(itemList, DateTime.Now);
+        if (!batchData.HasData)
+        {
+            DicomLogger.Warning("Database", "[DB] 立即入库：批处理中没有有效数据");
+            return new WriteResult(0, 0, 0, 0);
+        }
+
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        try
+        {
+            var writeResult = await InsertBatchAsync(connection, transaction, batchData);
+            await transaction.CommitAsync();
+            return writeResult;
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            DicomLogger.Error("Database", ex, "[DB] 立即入库失败 - 数据条数: {Count}", itemList.Count);
+            return new WriteResult(0, 0, 0, 0);
+        }
+    }
+
     private async Task ProcessQueueAsync()
     {
         if (_dataQueue.IsEmpty) return;
