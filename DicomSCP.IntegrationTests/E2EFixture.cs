@@ -35,10 +35,16 @@ public sealed class E2EFixture : IAsyncLifetime
     public const string CallingAe = "E2ESCU";
     public const string WorklistNodeName = "E2EWorklist";
 
+    /// <summary>出厂口令被标记为必须修改，fixture 首次登录后改为此口令。</summary>
+    public const string AdminPassword = "E2eAdmin!2026";
+
     public string Root { get; }
     public string DbPath => _dbPath;
     public string ServerLogPath { get; }
     public HttpClient Http { get; } = CreateHttpClient();
+
+    /// <summary>出厂口令未改密时，受限 API 是否被服务端拒绝（强制改密生效）。</summary>
+    public bool ForcedChangeBlockedApi { get; private set; }
 
     private readonly string _repoRoot;
     private readonly Process _server = new();
@@ -63,8 +69,9 @@ public sealed class E2EFixture : IAsyncLifetime
         await RunAsync("dotnet", $"publish \"{Path.Combine(_repoRoot, "DicomSCP.csproj")}\" -c Release -o \"{appDir}\" -v q");
         PatchAppSettings(Path.Combine(appDir, "appsettings.json"));
 
-        var exe = Path.Combine(appDir, "DicomSCP.exe");
-        _server.StartInfo.FileName = exe;
+        var exe = Path.Combine(appDir, "DicomSCP.dll");
+        _server.StartInfo.FileName = "dotnet";
+        _server.StartInfo.Arguments = $"\"{exe}\"";
         _server.StartInfo.WorkingDirectory = appDir;
         _server.StartInfo.UseShellExecute = false;
         _server.StartInfo.RedirectStandardOutput = true;
@@ -90,13 +97,42 @@ var started = await WaitForPortsAsync(TimeSpan.FromSeconds(60));
 
     private async Task LoginAsync()
     {
+        // 1) 出厂口令登录：新装库会被标记为必须改密
+        using (var first = await Http.PostAsJsonAsync("/api/Auth/login", new { username = "admin", password = "admin" }))
+        {
+            if (!first.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(
+                    $"E2E admin login failed with {(int)first.StatusCode}. Log tail:\n{ReadLogTail(200)}");
+            }
+        }
+
+        // 1.5) 改密前受限 API 必须被拒绝，验证服务端强制改密生效
+        using (var blocked = await Http.GetAsync("/api/Worklist"))
+        {
+            ForcedChangeBlockedApi = blocked.StatusCode == HttpStatusCode.Forbidden;
+        }
+
+        // 2) 完成强制改密（服务端会注销当前会话）
+        using (var change = await Http.PostAsJsonAsync(
+            "/api/auth/change-password",
+            new { oldPassword = "admin", newPassword = AdminPassword }))
+        {
+            if (!change.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(
+                    $"E2E force password change failed with {(int)change.StatusCode}. Log tail:\n{ReadLogTail(200)}");
+            }
+        }
+
+        // 3) 用新口令重新登录，取得不带改密标记的会话
         using var login = await Http.PostAsJsonAsync(
             "/api/Auth/login",
-            new { username = "admin", password = "admin" });
+            new { username = "admin", password = AdminPassword });
         if (!login.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                $"E2E admin login failed with {(int)login.StatusCode}. Log tail:\n{ReadLogTail(200)}");
+                $"E2E admin re-login failed with {(int)login.StatusCode}. Log tail:\n{ReadLogTail(200)}");
         }
     }
 

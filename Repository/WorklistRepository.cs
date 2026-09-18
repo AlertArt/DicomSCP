@@ -167,7 +167,7 @@ public class WorklistRepository(
     public async Task<WorklistItem?> GetByIdAsync(string worklistId)
     {
         LogDebug("正在查询Worklist项目 - WorklistId: {WorklistId}", worklistId);
-        using var connection = new SqliteConnection(_connectionString);
+        using var connection = CreateConnection();
         var sql = "SELECT * FROM Worklist WHERE WorklistId = @WorklistId";
 
         var item = await connection.QueryFirstOrDefaultAsync<WorklistItem>(sql, new { WorklistId = worklistId });
@@ -189,7 +189,7 @@ public class WorklistRepository(
     {
         try
         {
-            using var connection = new SqliteConnection(_connectionString);
+            using var connection = CreateConnection();
             
             // 设置创建和更新时间
             item.CreateTime = DateTime.Now;
@@ -228,7 +228,7 @@ public class WorklistRepository(
     {
         try
         {
-            using var connection = new SqliteConnection(_connectionString);
+            using var connection = CreateConnection();
             
             // 更新时间
             item.UpdateTime = DateTime.Now;
@@ -283,7 +283,7 @@ public class WorklistRepository(
     {
         try
         {
-            using var connection = new SqliteConnection(_connectionString);
+            using var connection = CreateConnection();
             
             LogInformation("正在删除Worklist项目 - WorklistId: {WorklistId}", worklistId);
             

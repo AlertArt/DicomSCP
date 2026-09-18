@@ -22,7 +22,7 @@ public class MwlWorkflowTests
     {
         const string patientId = "E2E-MWL-001";
 
-        var login = await _fx.Http.PostAsJsonAsync("/api/Auth/login", new { username = "admin", password = "admin" });
+        var login = await _fx.Http.PostAsJsonAsync("/api/Auth/login", new { username = "admin", password = E2EFixture.AdminPassword });
         Assert.True(login.IsSuccessStatusCode, $"login failed: {(int)login.StatusCode}");
 
         var createPayload = new JsonObject

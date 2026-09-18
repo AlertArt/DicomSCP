@@ -1,4 +1,6 @@
 using DicomSCP.Repository;
+using FellowOakDicom;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace DicomSCP.Tests;
@@ -131,5 +133,100 @@ public class DicomDatasetPersistenceTests : IDisposable
         Assert.Equal(2, writeResult.InsertedStudies);
         Assert.Equal(2, writeResult.InsertedSeries);
         Assert.Equal(2, writeResult.InsertedInstances);
+    }
+
+    [Fact]
+    public async Task TryReplayFailedQueue_ReinsertsDataAndDeletesRecord()
+    {
+        await DatabaseInitializer.InitializeAsync(_db.ConnectionString);
+
+        var storageRoot = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"dicom_test_store_{Guid.NewGuid():N}");
+        var failedQueuePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"failed_queue_{Guid.NewGuid():N}");
+        try
+        {
+            var relPath = "2024/01/01/1.2.3.4.900.1/1.2.3.4.900.2/1.2.3.4.900.3.dcm";
+            Directory.CreateDirectory(System.IO.Path.Combine(storageRoot, "2024/01/01/1.2.3.4.900.1/1.2.3.4.900.2"));
+            var ds = DicomTestData.MakeInstance(
+                studyUid: "1.2.3.4.900.1", seriesUid: "1.2.3.4.900.2", sopUid: "1.2.3.4.900.3");
+
+            await new DicomFile(ds).SaveAsync(System.IO.Path.Combine(storageRoot, relPath));
+
+            var record = new
+            {
+                StudyInstanceUid = "1.2.3.4.900.1",
+                SeriesInstanceUid = "1.2.3.4.900.2",
+                SopInstanceUid = "1.2.3.4.900.3",
+                FilePath = relPath,
+                RetryCount = 5,
+                FailedAt = DateTime.Now
+            };
+            Directory.CreateDirectory(failedQueuePath);
+            var recordFile = System.IO.Path.Combine(failedQueuePath, "replay_test.json");
+            await File.WriteAllTextAsync(recordFile, System.Text.Json.JsonSerializer.Serialize(record));
+
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:DicomDb"] = _db.ConnectionString,
+                    ["DicomSettings:FailedQueuePath"] = failedQueuePath
+                })
+                .Build();
+            using var replayPersistence = new DicomDatasetPersistence(config);
+            await replayPersistence.TryReplayFailedQueueAsync(storageRoot);
+
+            // 重放成功后记录文件被删除
+            Assert.False(File.Exists(recordFile));
+
+            // 数据已落入数据库
+            var repository = new DicomRepository(_db.Config);
+            var instances = repository.GetInstancesBySeriesUid("1.2.3.4.900.1", "1.2.3.4.900.2");
+            Assert.Single(instances);
+            Assert.Equal("1.2.3.4.900.3", instances[0].SopInstanceUid);
+        }
+        finally
+        {
+            if (Directory.Exists(storageRoot)) Directory.Delete(storageRoot, recursive: true);
+            if (Directory.Exists(failedQueuePath)) Directory.Delete(failedQueuePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task TryReplayFailedQueue_MissingFile_KeepsRecord()
+    {
+        await DatabaseInitializer.InitializeAsync(_db.ConnectionString);
+
+        var failedQueuePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"failed_queue_{Guid.NewGuid():N}");
+        try
+        {
+            var record = new
+            {
+                StudyInstanceUid = "1.2.3.4.901.1",
+                SeriesInstanceUid = "1.2.3.4.901.2",
+                SopInstanceUid = "1.2.3.4.901.3",
+                FilePath = "2024/01/01/1.2.3.4.901.1/1.2.3.4.901.2/missing.dcm",
+                RetryCount = 5,
+                FailedAt = DateTime.Now
+            };
+            Directory.CreateDirectory(failedQueuePath);
+            var recordFile = System.IO.Path.Combine(failedQueuePath, "replay_missing.json");
+            await File.WriteAllTextAsync(recordFile, System.Text.Json.JsonSerializer.Serialize(record));
+
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:DicomDb"] = _db.ConnectionString,
+                    ["DicomSettings:FailedQueuePath"] = failedQueuePath
+                })
+                .Build();
+            using var replayPersistence = new DicomDatasetPersistence(config);
+            await replayPersistence.TryReplayFailedQueueAsync(System.IO.Path.GetTempPath());
+
+            // 归档文件不存在：保留记录供下次重放
+            Assert.True(File.Exists(recordFile));
+        }
+        finally
+        {
+            if (Directory.Exists(failedQueuePath)) Directory.Delete(failedQueuePath, recursive: true);
+        }
     }
 }

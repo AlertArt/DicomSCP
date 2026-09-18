@@ -90,8 +90,8 @@ class AuthManager {
             }
 
             // 验证新密码长度
-            if (newPassword.length < 6) {
-                window.showToast('新密码长度不能少于6位', 'error');
+            if (newPassword.length < 8) {
+                window.showToast('新密码长度不能少于8位', 'error');
                 resetButton();
                 return;
             }
@@ -113,6 +113,7 @@ class AuthManager {
                 const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
                 modal.hide();
             }
+            sessionStorage.removeItem('mustChangePassword');
             window.showToast('密码修改成功，请重新登录', 'success');
             setTimeout(() => {
                 window.location.href = '/login.html';
@@ -128,10 +129,16 @@ class AuthManager {
     async getCurrentUsername() {
         try {
             const response = await axios.get('/api/auth/check-session');
-            const username = response.data.username;
+            const data = response.data || {};
+            const username = data.username;
             const usernameElement = document.getElementById('currentUsername');
             if (usernameElement) {
                 usernameElement.textContent = username;
+            }
+
+            // 默认口令未修改：强制弹出改密对话框（不可取消）
+            if (data.mustChangePassword || sessionStorage.getItem('mustChangePassword') === '1') {
+                this.showForcedPasswordChange();
             }
         } catch (error) {
             // 401 错误会被全局拦截器处理，这里只处理其他错误
@@ -142,6 +149,31 @@ class AuthManager {
                     usernameElement.textContent = '未知用户';
                 }
             }
+        }
+    }
+
+    // 强制修改默认口令：以静态背景展示，隐藏取消按钮
+    showForcedPasswordChange() {
+        try {
+            const modalElement = document.getElementById('changePasswordModal');
+            if (!modalElement) {
+                return;
+            }
+
+            const cancelButton = document.querySelector('#changePasswordModal .modal-footer button.btn-secondary');
+            cancelButton?.classList.add('d-none');
+
+            const closeButton = modalElement.querySelector('.modal-header .btn-close');
+            closeButton?.classList.add('d-none');
+
+            const modal = bootstrap.Modal.getOrCreateInstance(modalElement, {
+                backdrop: 'static',
+                keyboard: false
+            });
+            modal.show();
+            window.showToast?.('请先修改默认密码后再继续使用', 'warning');
+        } catch (error) {
+            console.error('显示强制改密对话框失败:', error);
         }
     }
 

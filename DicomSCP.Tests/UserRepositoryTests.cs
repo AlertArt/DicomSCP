@@ -137,6 +137,52 @@ public class UserRepositoryTests : IDisposable
         Assert.Equal(legacyHash, stored);
     }
 
+    [Fact]
+    public async Task FreshInit_SeedsDefaultAdmin_FlaggedForPasswordChange()
+    {
+        await DatabaseInitializer.InitializeAsync(_db.ConnectionString);
+
+        Assert.True(await _repository.IsPasswordChangeRequiredAsync("admin"));
+    }
+
+    [Fact]
+    public async Task ChangePassword_ClearsMustChangeFlag()
+    {
+        await DatabaseInitializer.InitializeAsync(_db.ConnectionString);
+        Assert.True(await _repository.IsPasswordChangeRequiredAsync("admin"));
+
+        await _repository.ChangePasswordAsync("admin", "new-password-123");
+
+        Assert.False(await _repository.IsPasswordChangeRequiredAsync("admin"));
+    }
+
+    [Fact]
+    public async Task SchemaMigration_AddsFlag_AndFlagsLegacyDefaultPassword()
+    {
+        // 模拟旧库：没有 MustChangePassword 列，且管理员仍是默认口令
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(_db.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await connection.ExecuteAsync(@"
+                CREATE TABLE Users (
+                    Username TEXT PRIMARY KEY,
+                    Password TEXT NOT NULL
+                )");
+        }
+
+        var legacyHash = PasswordHasher.Hash("admin");
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(_db.ConnectionString))
+        {
+            await connection.ExecuteAsync(
+                "INSERT INTO Users (Username, Password) VALUES ('admin', @Password)",
+                new { Password = legacyHash });
+        }
+
+        await DatabaseInitializer.InitializeAsync(_db.ConnectionString);
+
+        Assert.True(await _repository.IsPasswordChangeRequiredAsync("admin"));
+    }
+
     private static async Task<string?> GetStoredPasswordAsync(string connectionString, string username)
     {
         await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);

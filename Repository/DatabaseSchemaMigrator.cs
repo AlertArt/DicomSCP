@@ -15,6 +15,7 @@ public static class DatabaseSchemaMigrator
     public static async Task MigrateAsync(SqliteConnection connection, IDbTransaction? transaction = null)
     {
         await EnsureStudyRemarkColumnAsync(connection, transaction);
+        await EnsureMustChangePasswordColumnAsync(connection, transaction);
     }
 
     private static async Task EnsureStudyRemarkColumnAsync(SqliteConnection connection, IDbTransaction? transaction)
@@ -26,6 +27,37 @@ public static class DatabaseSchemaMigrator
         if (studyRemarkColumnExists == 0)
         {
             await connection.ExecuteAsync("ALTER TABLE Studies ADD COLUMN Remark TEXT", transaction: transaction);
+        }
+    }
+
+    /// <summary>
+    /// 为历史库补齐 Users.MustChangePassword。补列后若管理员仍在使用默认口令，
+    /// 则标记为必须改密（新装库在种子阶段已直接写入 1）。
+    /// </summary>
+    private static async Task EnsureMustChangePasswordColumnAsync(SqliteConnection connection, IDbTransaction? transaction)
+    {
+        var columnExists = await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM pragma_table_info('Users') WHERE name = 'MustChangePassword'",
+            transaction: transaction);
+
+        if (columnExists > 0)
+        {
+            return;
+        }
+
+        await connection.ExecuteAsync(
+            "ALTER TABLE Users ADD COLUMN MustChangePassword INTEGER NOT NULL DEFAULT 0",
+            transaction: transaction);
+
+        var adminPassword = await connection.ExecuteScalarAsync<string>(
+            "SELECT Password FROM Users WHERE Username = 'admin'",
+            transaction: transaction);
+
+        if (adminPassword != null && PasswordHasher.Verify("admin", adminPassword, out _))
+        {
+            await connection.ExecuteAsync(
+                "UPDATE Users SET MustChangePassword = 1 WHERE Username = 'admin'",
+                transaction: transaction);
         }
     }
 }

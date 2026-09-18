@@ -98,8 +98,9 @@ builder.Services.AddLogging(loggingBuilder =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
-// 配置 Swagger
-if (swaggerSettings.Enabled)
+// 配置 Swagger：仅在开发环境启用，避免生产环境公开 API 文档
+var swaggerEnabled = swaggerSettings.Enabled && builder.Environment.IsDevelopment();
+if (swaggerEnabled)
 {
     builder.Services.AddSwaggerGen(c =>
     {
@@ -130,6 +131,7 @@ builder.Services.AddSingleton<WorklistRepository>();
 builder.Services.AddSingleton<IStoreSCU, StoreSCU>();
 builder.Services.AddSingleton<IMwlScu, MwlScu>();
 builder.Services.AddSingleton<IPrintSCU, PrintSCU>();
+builder.Services.AddSingleton<LoginAttemptLimiter>();
 
 // 确保配置服务正确注册
 builder.Services.Configure<DicomSettings>(builder.Configuration.GetSection("DicomSettings"));
@@ -192,25 +194,49 @@ builder.Services.AddAuthentication("CustomAuth")
 // 添加授权但不设置默认策略
 builder.Services.AddAuthorization();
 
-// 配置转发头
+// 配置转发头：默认仅信任环回代理；如部署在反向代理/负载均衡后端，
+// 在 appsettings.json 的 ForwardedHeaders:KnownProxies / KnownNetworks 中显式列出可信来源。
+// 不再清空 KnownNetworks/KnownProxies，避免任意来源伪造 X-Forwarded-For。
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | 
+    options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor |
                               Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
-    // 清除默认网络，否则会因为安全检查而被忽略
-    options.KnownNetworks.Clear();
-    options.KnownProxies.Clear();
+
+    var forwardedSection = builder.Configuration.GetSection("ForwardedHeaders");
+    foreach (var proxy in forwardedSection.GetSection("KnownProxies").Get<string[]>() ?? [])
+    {
+        if (System.Net.IPAddress.TryParse(proxy, out var ip))
+        {
+            options.KnownProxies.Add(ip);
+        }
+    }
+    foreach (var network in forwardedSection.GetSection("KnownNetworks").Get<string[]>() ?? [])
+    {
+        var parts = network.Split('/', 2);
+        if (parts.Length == 2 &&
+            System.Net.IPAddress.TryParse(parts[0], out var prefix) &&
+            int.TryParse(parts[1], out var prefixLength) &&
+            prefixLength >= 0)
+        {
+            options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, prefixLength));
+        }
+    }
 });
 
+// CORS：默认不开放跨域（同源前端无需 CORS）；仅当显式配置 Cors:AllowedOrigins 时放行指定来源。
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", 
-        builder =>
+    options.AddPolicy("AppCors", policy =>
+    {
+        if (allowedOrigins.Length > 0)
         {
-            builder.AllowAnyOrigin()
-                   .AllowAnyMethod()
-                   .AllowAnyHeader();
-        });
+            policy.WithOrigins(allowedOrigins)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
+    });
 });
 
 // 配置 URL 重写规则
@@ -243,6 +269,9 @@ DicomSetupBuilder.UseServiceProvider(app.Services);
 
 CStoreSCP.Configure(settings, dicomPersistence);
 
+// 启动前重放失败队列：将上次运行落盘的失败入库记录重新入库
+await dicomPersistence.TryReplayFailedQueueAsync(settings.StoragePath);
+
 // 启动 DICOM 服务器
 var dicomServer = app.Services.GetRequiredService<DicomServer>();
 await dicomServer.StartAsync();
@@ -264,8 +293,8 @@ app.UseDefaultFiles(new DefaultFilesOptions
 });
 app.UseStaticFiles();
 
-// 5. Swagger
-if (swaggerSettings.Enabled)
+// 5. Swagger（仅开发环境）
+if (swaggerEnabled)
 {
     app.UseSwagger();
     app.UseSwaggerUI();
@@ -275,7 +304,7 @@ if (swaggerSettings.Enabled)
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseCors("AllowAll");  // CORS 应该在这里
+app.UseCors("AppCors");  // CORS 应该在这里
 
 // 7. 认证中间件（保护 API + DICOM 数据端点）
 app.Use(async (context, next) =>
@@ -292,6 +321,24 @@ app.Use(async (context, next) =>
     {
         context.Response.StatusCode = 401;
         return;
+    }
+
+    // 默认口令未修改时，除改密/登出/会话查询外的受限端点一律拒绝，
+    // 强制用户先完成改密，避免长期使用出厂口令。
+    var mustChangePassword = context.User.FindFirst("must_change_pwd")?.Value == "1";
+    if (requiresAuth && mustChangePassword)
+    {
+        var allowedWhileChanging =
+            path?.StartsWith("/api/auth/change-password") == true ||
+            path?.StartsWith("/api/auth/logout") == true ||
+            path?.StartsWith("/api/auth/check-session") == true;
+
+        if (!allowedWhileChanging)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new { error = "must_change_password" });
+            return;
+        }
     }
 
     await next();

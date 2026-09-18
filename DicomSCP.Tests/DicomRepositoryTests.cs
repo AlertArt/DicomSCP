@@ -1,4 +1,5 @@
 using DicomSCP.Repository;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace DicomSCP.Tests;
@@ -181,5 +182,37 @@ public class DicomRepositoryTests : IDisposable
             Assert.Equal(1, p.NumberOfSeries);
             Assert.Equal(1, p.NumberOfInstances);
         });
+    }
+
+    [Fact]
+    public void GetStudies_ThrowOnErrorDefault_SwallowsDatabaseFailure()
+    {
+        var deadRepository = CreateDeadRepository();
+
+        var result = deadRepository.GetStudies("", "", "", ("", ""), null);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetStudies_ThrowOnErrorTrue_PropagatesDatabaseFailure()
+    {
+        var deadRepository = CreateDeadRepository();
+
+        Assert.ThrowsAny<Exception>(() =>
+            deadRepository.GetStudies("", "", "", ("", ""), null, throwOnError: true));
+    }
+
+    /// <summary>构造一个指向不存在只读库的仓储，用于模拟数据库不可用。</summary>
+    private static DicomRepository CreateDeadRepository()
+    {
+        var missingDb = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"missing_{Guid.NewGuid():N}.db");
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DicomDb"] = $"Data Source={missingDb};Mode=ReadOnly"
+            })
+            .Build();
+        return new DicomRepository(config);
     }
 }

@@ -142,7 +142,7 @@ public class StoreSCUController(
 
             // 获取研究相关的所有文件路径
             var repository = HttpContext.RequestServices.GetRequiredService<DicomRepository>();
-            var instances = repository.GetInstancesByStudyUid(studyInstanceUid);
+            var instances = repository.GetInstancesByStudyUid(studyInstanceUid, throwOnError: true);
             
             if (!instances.Any())
             {

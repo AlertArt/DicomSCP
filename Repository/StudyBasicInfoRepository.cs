@@ -11,7 +11,7 @@ public sealed class StudyBasicInfoRepository(IConfiguration configuration) : Bas
 {
     public async Task DeleteStudyAsync(string studyInstanceUid)
     {
-        await using var connection = new SqliteConnection(_connectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync();
 
@@ -55,7 +55,7 @@ public sealed class StudyBasicInfoRepository(IConfiguration configuration) : Bas
 
     public async Task<IEnumerable<Series>> GetSeriesByStudyUidAsync(string studyUid)
     {
-        await using var connection = new SqliteConnection(_connectionString);
+        await using var connection = CreateConnection();
         var sql = @"
             SELECT s.*, 
                    (SELECT COUNT(*) FROM Instances i WHERE i.SeriesInstanceUid = s.SeriesInstanceUid) as NumberOfInstances,
@@ -171,7 +171,7 @@ public sealed class StudyBasicInfoRepository(IConfiguration configuration) : Bas
         parameters.Add("@PageSize", pageSize);
         parameters.Add("@Offset", (page - 1) * pageSize);
 
-        await using var connection = new SqliteConnection(_connectionString);
+        await using var connection = CreateConnection();
         var totalCount = await connection.ExecuteScalarAsync<int>(countSql, parameters);
         var items = await connection.QueryAsync<StudyInfo>(sql.ToString(), parameters);
 
@@ -208,7 +208,7 @@ public sealed class StudyBasicInfoRepository(IConfiguration configuration) : Bas
             return false;
         }
 
-        await using var connection = new SqliteConnection(_connectionString);
+        await using var connection = CreateConnection();
         await connection.OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync();
 

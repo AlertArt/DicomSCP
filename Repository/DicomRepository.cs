@@ -11,7 +11,7 @@ public class DicomRepository(IConfiguration configuration)
 
     public async Task<Study?> GetStudyAsync(string studyInstanceUid)
     {
-        using var connection = new SqliteConnection(_connectionString);
+        using var connection = CreateConnection();
         await connection.OpenAsync();
         
         var sql = @"
@@ -28,7 +28,7 @@ public class DicomRepository(IConfiguration configuration)
 
     public async Task<IEnumerable<Instance>> GetSeriesInstancesAsync(string seriesInstanceUid)
     {
-        using var connection = new SqliteConnection(_connectionString);
+        using var connection = CreateConnection();
         var sql = @"
             SELECT * FROM Instances 
             WHERE SeriesInstanceUid = @SeriesInstanceUid 
@@ -39,7 +39,7 @@ public class DicomRepository(IConfiguration configuration)
 
     public async Task<Instance?> GetInstanceAsync(string sopInstanceUid)
     {
-        using var connection = new SqliteConnection(_connectionString);
+        using var connection = CreateConnection();
         var sql = "SELECT * FROM Instances WHERE SopInstanceUid = @SopInstanceUid";
         
         return await connection.QueryFirstOrDefaultAsync<Instance>(
@@ -48,7 +48,7 @@ public class DicomRepository(IConfiguration configuration)
         );
     }
 
-    public List<Series> GetSeriesByStudyUid(string studyInstanceUid)
+    public List<Series> GetSeriesByStudyUid(string studyInstanceUid, bool throwOnError = false)
     {
         try
         {
@@ -73,11 +73,12 @@ public class DicomRepository(IConfiguration configuration)
         catch (Exception ex)
         {
             LogError(ex, "序列查询失败 - StudyInstanceUid: {StudyInstanceUid}", studyInstanceUid);
+            if (throwOnError) throw;
             return [];
         }
     }
 
-    public List<Instance> GetInstancesBySeriesUid(string studyInstanceUid, string seriesInstanceUid)
+    public List<Instance> GetInstancesBySeriesUid(string studyInstanceUid, string seriesInstanceUid, bool throwOnError = false)
     {
         try
         {
@@ -108,11 +109,12 @@ public class DicomRepository(IConfiguration configuration)
         {
             LogError(ex, "图像查询失败 - StudyInstanceUid: {StudyInstanceUid}, SeriesInstanceUid: {SeriesInstanceUid}", 
                 studyInstanceUid, seriesInstanceUid);
+            if (throwOnError) throw;
             return new List<Instance>();
         }
     }
 
-    public IEnumerable<Instance> GetInstancesByStudyUid(string studyInstanceUid)
+    public IEnumerable<Instance> GetInstancesByStudyUid(string studyInstanceUid, bool throwOnError = false)
     {
         try
         {
@@ -137,11 +139,12 @@ public class DicomRepository(IConfiguration configuration)
         catch (Exception ex)
         {
             LogError(ex, "实例查询失败 - StudyInstanceUid: {StudyInstanceUid}", studyInstanceUid);
+            if (throwOnError) throw;
             return [];
         }
     }
 
-    public IEnumerable<Patient> GetPatients(string patientId, string patientName)
+    public IEnumerable<Patient> GetPatients(string patientId, string patientName, bool throwOnError = false)
     {
         try
         {
@@ -193,6 +196,7 @@ public class DicomRepository(IConfiguration configuration)
         {
             LogError(ex, "Patient查询失败 - PatientId: {PatientId}, PatientName: {PatientName}", 
                 patientId, patientName);
+            if (throwOnError) throw;
             return Enumerable.Empty<Patient>();
         }
     }
@@ -206,7 +210,8 @@ public class DicomRepository(IConfiguration configuration)
         string[]? modalities,
         string? studyInstanceUid = null,
         int? offset = null,
-        int? limit = null)
+        int? limit = null,
+        bool throwOnError = false)
     {
         try
         {
@@ -295,13 +300,14 @@ public class DicomRepository(IConfiguration configuration)
         catch (Exception ex)
         {
             LogError(ex, "检查查询失败");
+            if (throwOnError) throw;
             return [];
         }
     }
 
     public async Task<IEnumerable<Series>> GetSeriesAsync(string studyInstanceUid)
     {
-        using var connection = new SqliteConnection(_connectionString);
+        using var connection = CreateConnection();
         var sql = @"
             SELECT s.*, COUNT(i.SopInstanceUid) as NumberOfInstances
             FROM Series s
@@ -318,7 +324,7 @@ public class DicomRepository(IConfiguration configuration)
     // 为 QIDO-RS 提供 Study / Series / Instance 三种层级的属性过滤查询。
     // 数据库仅持久化常用标签，因此未知标签会被静默忽略（符合 PS3.18 QIDO-RS 约定）。
 
-    public List<Study> QidoQueryStudies(IReadOnlyDictionary<DicomTag, IReadOnlyList<string>> matches, bool fuzzy, int? offset, int? limit)
+    public List<Study> QidoQueryStudies(IReadOnlyDictionary<DicomTag, IReadOnlyList<string>> matches, bool fuzzy, int? offset, int? limit, bool throwOnError = false)
     {
         try
         {
@@ -358,11 +364,12 @@ public class DicomRepository(IConfiguration configuration)
         catch (Exception ex)
         {
             LogError(ex, "QIDO Study查询失败");
+            if (throwOnError) throw;
             return [];
         }
     }
 
-    public List<Series> QidoQuerySeries(string studyInstanceUid, IReadOnlyDictionary<DicomTag, IReadOnlyList<string>> matches, bool fuzzy, int? offset, int? limit)
+    public List<Series> QidoQuerySeries(string studyInstanceUid, IReadOnlyDictionary<DicomTag, IReadOnlyList<string>> matches, bool fuzzy, int? offset, int? limit, bool throwOnError = false)
     {
         try
         {
@@ -393,11 +400,12 @@ public class DicomRepository(IConfiguration configuration)
         catch (Exception ex)
         {
             LogError(ex, "QIDO Series查询失败 - Study: {StudyInstanceUid}", studyInstanceUid);
+            if (throwOnError) throw;
             return [];
         }
     }
 
-    public List<Instance> QidoQueryInstances(string studyInstanceUid, string seriesInstanceUid, IReadOnlyDictionary<DicomTag, IReadOnlyList<string>> matches, bool fuzzy, int? offset, int? limit)
+    public List<Instance> QidoQueryInstances(string studyInstanceUid, string seriesInstanceUid, IReadOnlyDictionary<DicomTag, IReadOnlyList<string>> matches, bool fuzzy, int? offset, int? limit, bool throwOnError = false)
     {
         try
         {
@@ -429,6 +437,7 @@ public class DicomRepository(IConfiguration configuration)
         catch (Exception ex)
         {
             LogError(ex, "QIDO Instance查询失败 - Study: {StudyInstanceUid}, Series: {SeriesInstanceUid}", studyInstanceUid, seriesInstanceUid);
+            if (throwOnError) throw;
             return [];
         }
     }

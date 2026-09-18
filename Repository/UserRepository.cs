@@ -46,7 +46,8 @@ public sealed class UserRepository(IConfiguration configuration)
 
         var sql = @"
             UPDATE Users
-            SET Password = @Password
+            SET Password = @Password,
+                MustChangePassword = 0
             WHERE Username = @Username";
 
         var result = await connection.ExecuteAsync(sql, new
@@ -56,6 +57,17 @@ public sealed class UserRepository(IConfiguration configuration)
         });
 
         return result > 0;
+    }
+
+    /// <summary>判断账号是否被标记为必须修改口令（默认口令或管理员重置后）。</summary>
+    public async Task<bool> IsPasswordChangeRequiredAsync(string username)
+    {
+        await using var connection = CreateConnection();
+        var required = await connection.ExecuteScalarAsync<int?>(
+            "SELECT MustChangePassword FROM Users WHERE Username = @Username",
+            new { Username = username });
+
+        return required == 1;
     }
 
     /// <summary>

@@ -12,7 +12,7 @@ public abstract class BaseRepository(string connectionString)
 
     protected SqliteConnection CreateConnection()
     {
-        return new SqliteConnection(_connectionString);
+        return SqliteConnectionFactory.Create(_connectionString);
     }
 
     public static void ConfigureLogging()

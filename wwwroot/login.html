@@ -183,7 +183,14 @@
             const errorMessage = document.getElementById('error-message');
             
             try {
-                await axios.post('/api/auth/login', { username, password });
+                const response = await axios.post('/api/auth/login', { username, password });
+                
+                // 默认口令需强制修改：标记后由首页弹出改密对话框
+                if (response.data?.mustChangePassword) {
+                    sessionStorage.setItem('mustChangePassword', '1');
+                } else {
+                    sessionStorage.removeItem('mustChangePassword');
+                }
                 
                 // 登录成功，跳转到首页
                 window.location.href = '/';

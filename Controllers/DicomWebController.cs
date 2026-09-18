@@ -38,7 +38,7 @@ public class DicomWebController(
         {
             var (matches, fuzzy, offset, limit) = ParseQidoQuery(Request);
 
-            var studies = await Task.Run(() => _repository.QidoQueryStudies(matches, fuzzy, offset, limit));
+            var studies = await Task.Run(() => _repository.QidoQueryStudies(matches, fuzzy, offset, limit, throwOnError: true));
             var json = "[" + string.Join(",", studies.Select(s => DicomWebHelpers.ToDicomJson(DicomWebHelpers.BuildStudyDataset(s)))) + "]";
             return Content(json, DicomWebHelpers.JsonContentType, Encoding.UTF8);
         }
@@ -55,7 +55,7 @@ public class DicomWebController(
         try
         {
             var (matches, fuzzy, offset, limit) = ParseQidoQuery(Request);
-            var seriesList = await Task.Run(() => _repository.QidoQuerySeries(study, matches, fuzzy, offset, limit));
+            var seriesList = await Task.Run(() => _repository.QidoQuerySeries(study, matches, fuzzy, offset, limit, throwOnError: true));
             var json = "[" + string.Join(",", seriesList.Select(x => DicomWebHelpers.ToDicomJson(DicomWebHelpers.BuildSeriesDataset(x)))) + "]";
             return Content(json, DicomWebHelpers.JsonContentType, Encoding.UTF8);
         }
@@ -72,7 +72,7 @@ public class DicomWebController(
         try
         {
             var (matches, fuzzy, offset, limit) = ParseQidoQuery(Request);
-            var instances = await Task.Run(() => _repository.QidoQueryInstances(study, series, matches, fuzzy, offset, limit));
+            var instances = await Task.Run(() => _repository.QidoQueryInstances(study, series, matches, fuzzy, offset, limit, throwOnError: true));
             var json = "[" + string.Join(",", instances.Select(i => DicomWebHelpers.ToDicomJson(DicomWebHelpers.BuildInstanceDataset(i)))) + "]";
             return Content(json, DicomWebHelpers.JsonContentType, Encoding.UTF8);
         }
@@ -274,11 +274,11 @@ public class DicomWebController(
             }
             else if (!string.IsNullOrEmpty(seriesUid))
             {
-                instances = await Task.Run(() => _repository.GetInstancesBySeriesUid(studyUid, seriesUid!));
+                instances = await Task.Run(() => _repository.GetInstancesBySeriesUid(studyUid, seriesUid!, throwOnError: true));
             }
             else
             {
-                instances = await Task.Run(() => _repository.GetInstancesByStudyUid(studyUid).ToList());
+                instances = await Task.Run(() => _repository.GetInstancesByStudyUid(studyUid, throwOnError: true).ToList());
             }
 
             if (instances.Count == 0)

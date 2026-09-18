@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 using System.Data;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace DicomSCP.Repository;
 
@@ -15,10 +16,29 @@ namespace DicomSCP.Repository;
 public sealed class DicomDatasetPersistence : IDisposable
 {
     private readonly string _connectionString;
-    private readonly ConcurrentQueue<(DicomDataset Dataset, string FilePath)> _dataQueue = new();
+    private sealed class QueueItem
+    {
+        public required DicomDataset Dataset { get; init; }
+        public required string FilePath { get; init; }
+        public int RetryCount { get; set; }
+    }
+
+    private sealed class FailedRecord
+    {
+        public string StudyInstanceUid { get; set; } = "";
+        public string SeriesInstanceUid { get; set; } = "";
+        public string SopInstanceUid { get; set; } = "";
+        public string FilePath { get; set; } = "";
+        public int RetryCount { get; set; }
+        public DateTime FailedAt { get; set; }
+    }
+
+    private readonly ConcurrentQueue<QueueItem> _dataQueue = new();
     private readonly SemaphoreSlim _processSemaphore = new(1, 1);
     private readonly Timer _processTimer;
     private readonly int _batchSize;
+    private readonly int _maxRetryCount;
+    private readonly string _failedQueuePath;
     private readonly TimeSpan _maxWaitTime = TimeSpan.FromSeconds(10);
     private readonly TimeSpan _minWaitTime = TimeSpan.FromSeconds(2);
     private readonly Stopwatch _performanceTimer = new();
@@ -31,6 +51,9 @@ public sealed class DicomDatasetPersistence : IDisposable
             ?? throw new ArgumentException("Missing DicomDb connection string");
         _batchSize = configuration.GetValue<int>("DicomSettings:BatchSize", 50);
         if (_batchSize <= 0) _batchSize = 50;
+        _maxRetryCount = configuration.GetValue<int>("DicomSettings:MaxRetryCount", 3);
+        if (_maxRetryCount < 0) _maxRetryCount = 3;
+        _failedQueuePath = configuration.GetValue<string>("DicomSettings:FailedQueuePath") ?? "./failed_queue";
         _processTimer = new Timer(async _ => await ProcessQueueAsync(), null, _minWaitTime, _minWaitTime);
     }
 
@@ -104,7 +127,7 @@ public sealed class DicomDatasetPersistence : IDisposable
     /// </summary>
     public async Task SaveDicomDataAsync(DicomDataset dataset, string filePath)
     {
-        _dataQueue.Enqueue((dataset, filePath));
+        _dataQueue.Enqueue(new QueueItem { Dataset = dataset, FilePath = filePath });
 
         // 当队列达到批处理的80%时，主动触发处理
         if (_dataQueue.Count >= _batchSize * 0.8)
@@ -137,7 +160,7 @@ public sealed class DicomDatasetPersistence : IDisposable
             return new WriteResult(0, 0, 0, 0);
         }
 
-        await using var connection = new SqliteConnection(_connectionString);
+        await using var connection = SqliteConnectionFactory.Create(_connectionString);
         await connection.OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync();
 
@@ -178,7 +201,7 @@ public sealed class DicomDatasetPersistence : IDisposable
             return;
         }
 
-        List<(DicomDataset Dataset, string FilePath)> batchItems = new();
+        List<QueueItem> batchItems = new();
 
         try
         {
@@ -193,14 +216,15 @@ public sealed class DicomDatasetPersistence : IDisposable
 
             if (batchItems.Count == 0) return;
 
-            await using var connection = new SqliteConnection(_connectionString);
+            await using var connection = SqliteConnectionFactory.Create(_connectionString);
             await connection.OpenAsync();
             await using var transaction = await connection.BeginTransactionAsync();
 
             try
             {
                 var now = DateTime.Now;
-                var batchData = BuildBatchData(batchItems, now);
+                var batchData = BuildBatchData(
+                    batchItems.Select(i => (i.Dataset, i.FilePath)).ToList(), now);
                 if (!batchData.HasData)
                 {
                     DicomLogger.Warning("Database", "[DB] 批处理中没有有效数据");
@@ -229,22 +253,20 @@ public sealed class DicomDatasetPersistence : IDisposable
                 await transaction.RollbackAsync();
                 DicomLogger.Error("Database", ex, "[DB] 数据库操作失败 - 批次大小: {Count}", batchItems.Count);
 
-                // 记录失败的数据，但不重新入队
-                foreach (var (dataset, filePath) in batchItems)
+                // 失败批次自动重试（带上限），超限后落盘到失败队列目录，避免数据丢失
+                foreach (var item in batchItems)
                 {
-                    try
+                    if (item.RetryCount < _maxRetryCount)
                     {
-                        var sopInstanceUid = dataset.GetSingleValueOrDefault<string>(DicomTag.SOPInstanceUID, "Unknown");
-                        var studyInstanceUid = dataset.GetSingleValueOrDefault<string>(DicomTag.StudyInstanceUID, "Unknown");
-                        var seriesInstanceUid = dataset.GetSingleValueOrDefault<string>(DicomTag.SeriesInstanceUID, "Unknown");
-
-                        DicomLogger.Information("Database",
-                            "[DB] 数据入库失败 - 文件: {FilePath}, Study: {Study}, Series: {Series}, Instance: {Instance}",
-                            filePath, studyInstanceUid, seriesInstanceUid, sopInstanceUid);
+                        item.RetryCount++;
+                        _dataQueue.Enqueue(item);
+                        DicomLogger.Warning("Database",
+                            "[DB] 数据入库失败，重新入队 - 文件: {FilePath}, 第 {RetryCount}/{MaxRetry} 次重试",
+                            item.FilePath, item.RetryCount, _maxRetryCount);
                     }
-                    catch
+                    else
                     {
-                        DicomLogger.Information("Database", "[DB] 数据入库失败且无法获取标识信息 - 文件: {FilePath}", filePath);
+                        PersistFailedItem(item);
                     }
                 }
             }
@@ -326,6 +348,83 @@ public sealed class DicomDatasetPersistence : IDisposable
         catch (Exception ex)
         {
             DicomLogger.Error("Database", ex, "[DB] Dispose过程发生错误");
+        }
+    }
+
+    /// <summary>
+    /// 将重试已达上限的入库项落盘到失败队列目录，供启动时重放或人工处理。
+    /// </summary>
+    private void PersistFailedItem(QueueItem item)
+    {
+        try
+        {
+            Directory.CreateDirectory(_failedQueuePath);
+            var record = new FailedRecord
+            {
+                StudyInstanceUid = item.Dataset.GetSingleValueOrDefault<string>(DicomTag.StudyInstanceUID, "Unknown"),
+                SeriesInstanceUid = item.Dataset.GetSingleValueOrDefault<string>(DicomTag.SeriesInstanceUID, "Unknown"),
+                SopInstanceUid = item.Dataset.GetSingleValueOrDefault<string>(DicomTag.SOPInstanceUID, "Unknown"),
+                FilePath = item.FilePath,
+                RetryCount = item.RetryCount,
+                FailedAt = DateTime.Now
+            };
+
+            var fileName = $"{DateTime.Now:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}.json";
+            File.WriteAllText(Path.Combine(_failedQueuePath, fileName), JsonSerializer.Serialize(record));
+            DicomLogger.Error("Database",
+                "[DB] 数据入库失败已达上限（{MaxRetry}次），已落盘到失败队列 - 文件: {FilePath}, 记录: {Record}",
+                _maxRetryCount, item.FilePath, fileName);
+        }
+        catch (Exception ex)
+        {
+            DicomLogger.Error("Database", ex, "[DB] 落盘失败记录时出错 - 文件: {FilePath}", item.FilePath);
+        }
+    }
+
+    /// <summary>
+    /// 启动时扫描失败队列目录并重放：读取归档文件重建数据集后立即入库，
+    /// 入库（或幂等确认已存在）成功的记录文件被删除，失败则保留待下次重放。
+    /// </summary>
+    public async Task TryReplayFailedQueueAsync(string storageRoot)
+    {
+        if (!Directory.Exists(_failedQueuePath))
+        {
+            return;
+        }
+
+        var recordFiles = Directory.EnumerateFiles(_failedQueuePath, "*.json").ToList();
+        if (recordFiles.Count > 0)
+        {
+            DicomLogger.Information("Database", "[DB] 发现失败队列记录 {Count} 条，开始重放", recordFiles.Count);
+        }
+
+        foreach (var recordFile in recordFiles)
+        {
+            try
+            {
+                var record = JsonSerializer.Deserialize<FailedRecord>(await File.ReadAllTextAsync(recordFile));
+                if (record == null || string.IsNullOrEmpty(record.FilePath))
+                {
+                    continue;
+                }
+
+                var fullPath = Path.Combine(storageRoot, record.FilePath.Replace('\\', Path.DirectorySeparatorChar));
+                if (!File.Exists(fullPath))
+                {
+                    DicomLogger.Warning("Database", "[DB] 失败队列中的文件已不存在，跳过 - 文件: {FilePath}", record.FilePath);
+                    continue;
+                }
+
+                var dicomFile = await DicomFile.OpenAsync(fullPath);
+                // 入库采用 INSERT OR IGNORE，语义幂等：已存在（0条新增）同样视为重放完成
+                await SaveDicomDataImmediateAsync(dicomFile.Dataset, record.FilePath);
+                File.Delete(recordFile);
+                DicomLogger.Information("Database", "[DB] 失败队列重放完成 - 文件: {FilePath}", record.FilePath);
+            }
+            catch (Exception ex)
+            {
+                DicomLogger.Error("Database", ex, "[DB] 失败队列重放失败 - 记录文件: {File}", recordFile);
+            }
         }
     }
 

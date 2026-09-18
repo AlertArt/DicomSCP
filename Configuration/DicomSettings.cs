@@ -129,7 +129,7 @@ public class MppsSCPSettings
     [Range(1, 65535)]
     public int Port { get; set; } = 11117;
 
-public bool ValidateCallingAE { get; set; } = false;
+    public bool ValidateCallingAE { get; set; } = false;
     public string[] AllowedCallingAEs { get; set; } = Array.Empty<string>();
 }
 

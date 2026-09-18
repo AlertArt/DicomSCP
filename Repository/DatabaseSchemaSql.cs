@@ -97,7 +97,8 @@ public static class DatabaseSchemaSql
     public const string CreateUsersTable = @"
             CREATE TABLE IF NOT EXISTS Users (
                 Username TEXT PRIMARY KEY,
-                Password TEXT NOT NULL
+                Password TEXT NOT NULL,
+                MustChangePassword INTEGER NOT NULL DEFAULT 0
             )";
 
     // 默认管理员由 DatabaseInitializer 在运行时以 PBKDF2（每次安装独立随机盐）创建，
@@ -213,4 +214,18 @@ public static class DatabaseSchemaSql
                 CreateTime DATETIME,
                 UpdateTime DATETIME
             )";
+
+    /// <summary>
+    /// 查询热点列索引。以 CREATE INDEX IF NOT EXISTS 幂等执行，
+    /// 既覆盖新建库，也会为历史库补建（每次启动都会运行）。
+    /// 外键/连接列（Studies.PatientId、Series.StudyInstanceUid、Instances.SeriesInstanceUid）
+    /// 同时服务于 JOIN 与 WHERE 过滤；状态/AE 列为 SCP 查询的常用过滤条件。
+    /// </summary>
+    public const string CreateIndexes = @"
+            CREATE INDEX IF NOT EXISTS IX_Studies_PatientId ON Studies(PatientId);
+            CREATE INDEX IF NOT EXISTS IX_Series_StudyInstanceUid ON Series(StudyInstanceUid);
+            CREATE INDEX IF NOT EXISTS IX_Instances_SeriesInstanceUid ON Instances(SeriesInstanceUid);
+            CREATE INDEX IF NOT EXISTS IX_Worklist_ScheduledAET ON Worklist(ScheduledAET);
+            CREATE INDEX IF NOT EXISTS IX_StorageCommitments_Status ON StorageCommitments(Status);
+            CREATE INDEX IF NOT EXISTS IX_UpsWorkItems_ScheduledAeTitle ON UPSWorkItems(ScheduledAeTitle);";
 }
