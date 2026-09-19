@@ -120,6 +120,11 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
                 {
                     pc.AcceptTransferSyntaxes(_acceptedImageTransferSyntaxes);  // 使用图像传输语法
                 }
+                else if (IsSrStorage(pc.AbstractSyntax))  // 结构化报告存储 (SR)
+                {
+                    // 显式接受 SR SOP 类，不依赖 fo-dicom 运行时的 StorageCategory 归类
+                    pc.AcceptTransferSyntaxes(_acceptedTransferSyntaxes);
+                }
                 else if (pc.AbstractSyntax.StorageCategory != DicomStorageCategory.None)  // 其他存储
                 {
                     pc.AcceptTransferSyntaxes(_acceptedTransferSyntaxes);
@@ -136,6 +141,24 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
                 DicomRejectSource.ServiceUser,
                 DicomRejectReason.NoReasonGiven);
         }
+    }
+
+    /// <summary>
+    /// 判断是否为结构化报告(SR)存储 SOP 类。
+    /// 显式按 DICOM 标准 SR SOP Class UID 白名单判断,
+    /// 覆盖 fo-dicom 运行时对 SR 的 StorageCategory 归类不一致问题。
+    /// </summary>
+    private static bool IsSrStorage(DicomUID sopClass)
+    {
+        // 结构化报告存储 SOP 类 UID 白名单（DICOM 标准 UID 字符串，不依赖
+        // fo-dicom 的 DicomUID 静态字段名或其运行时 StorageCategory 归类）
+        var uid = sopClass.UID;
+        return uid == "1.2.840.10008.5.1.4.1.1.88.11" ||  // Basic Text SR
+               uid == "1.2.840.10008.5.1.4.1.1.88.22" ||  // Enhanced SR
+               uid == "1.2.840.10008.5.1.4.1.1.88.33" ||  // Comprehensive SR
+               uid == "1.2.840.10008.5.1.4.1.1.88.34" ||  // Comprehensive 3D SR
+               uid == "1.2.840.10008.5.1.4.1.1.88.40" ||  // Procedure Log
+               uid == "1.2.840.10008.5.1.4.1.1.88.59";    // Key Object Selection Document
     }
 
     private static bool IsImageStorage(DicomUID sopClass)
