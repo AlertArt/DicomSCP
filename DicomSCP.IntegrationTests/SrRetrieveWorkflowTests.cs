@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Headers;
 using FellowOakDicom;
 using FellowOakDicom.Network;
 using Xunit;
@@ -17,59 +19,239 @@ public class SrRetrieveWorkflowTests
     [Fact]
     public async Task SrStoreThenFindThenQidoWado_AllSucceed()
     {
-        var study = DicomUIDGenerator.GenerateDerivedFromUUID();
-        var series = DicomUIDGenerator.GenerateDerivedFromUUID();
-        var sop = DicomUIDGenerator.GenerateDerivedFromUUID();
+        var (study, series, sop) = NewUids();
 
-        var filePath = Path.Combine(Path.GetTempPath(), "sr_" + Guid.NewGuid().ToString("N") + ".dcm");
-        var ds = CreateMinimalSr(study, series, sop);
-        new DicomFile(ds).Save(filePath);
-
+        var filePath = await StoreSrAsync(study, series, sop);
         try
         {
-            DicomStatus? storeStatus = null;
-            var store = _fx.CreateClient(E2EFixture.StorePort, "STORESCP");
-            var cstore = new DicomCStoreRequest(filePath);
-            cstore.OnResponseReceived += (_, r) => storeStatus = r.Status;
-            await store.AddRequestAsync(cstore);
-            await store.SendAsync();
-            Assert.Equal(DicomStatus.Success, storeStatus);
+            // DIMSE C-FIND 必须先能检索到该 SR 研究（等待批量入库落库）
+            Assert.True(await WaitForQrHitAsync(study.UID), "QR C-FIND did not return the stored SR study");
 
-            Assert.True(await _fx.WaitForFileAsync(sop.UID + ".dcm", 15000),
-                "stored SR file not found");
-
-            bool qrHit = false;
-            await _fx.WaitForAsync(async () =>
+            // QIDO-RS：研究级查询应命中
+            using (var qidoStudy = await GetAsync($"/dicomweb/studies?StudyInstanceUID={study.UID}", "application/dicom+json"))
             {
-                var qr = _fx.CreateClient(E2EFixture.QrPort, "QRSCP");
-                var cfind = new DicomCFindRequest(
-                    DicomUID.StudyRootQueryRetrieveInformationModelFind,
-                    DicomQueryRetrieveLevel.Study,
-                    DicomPriority.Medium);
-                cfind.Dataset = new DicomDataset
-                {
-                    { DicomTag.QueryRetrieveLevel, "STUDY" },
-                    { DicomTag.StudyInstanceUID, study.UID }
-                };
-                cfind.OnResponseReceived += (_, r) =>
-                {
-                    if (r.Status == DicomStatus.Pending)
-                    {
-                        qrHit |= r.Dataset?.GetSingleValueOrDefault<string>(DicomTag.StudyInstanceUID, "") == study.UID;
-                    }
-                };
-                await qr.AddRequestAsync(cfind);
-                await qr.SendAsync();
-                return qrHit;
-            }, 20000);
-            Assert.True(qrHit, "QR C-FIND did not return the stored SR study");
+                Assert.Equal(HttpStatusCode.OK, qidoStudy.StatusCode);
+                Assert.Contains(study.UID, await qidoStudy.Content.ReadAsStringAsync());
+            }
+
+            // QIDO-RS：实例级查询应命中
+            using (var qidoInst = await GetAsync($"/dicomweb/studies/{study.UID}/series/{series.UID}/instances", "application/dicom+json"))
+            {
+                Assert.Equal(HttpStatusCode.OK, qidoInst.StatusCode);
+                Assert.Contains(sop.UID, await qidoInst.Content.ReadAsStringAsync());
+            }
+
+            // WADO-RS：实例元数据（DICOM JSON）应可检索
+            using (var metadata = await GetAsync($"/dicomweb/studies/{study.UID}/series/{series.UID}/instances/{sop.UID}/metadata", "application/dicom+json"))
+            {
+                Assert.Equal(HttpStatusCode.OK, metadata.StatusCode);
+                var body = await metadata.Content.ReadAsStringAsync();
+                Assert.Contains(sop.UID, body);
+                Assert.Contains("1.2.840.10008.5.1.4.1.1.88.11", body);
+            }
+
+            // WADO-RS：实例本体（DICOM）应可检索
+            using (var retrieve = await GetAsync($"/dicomweb/studies/{study.UID}/series/{series.UID}/instances/{sop.UID}", "multipart/related; type=\"application/dicom\""))
+            {
+                Assert.Equal(HttpStatusCode.OK, retrieve.StatusCode);
+                Assert.Equal("application/dicom", retrieve.Content.Headers.ContentType?.MediaType);
+                Assert.True((await retrieve.Content.ReadAsByteArrayAsync()).Length > 0, "retrieved SR body is empty");
+            }
         }
         finally
         {
-            if (File.Exists(filePath))
+            DeleteTemp(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task SrReportFieldsPersistedAndQueryable()
+    {
+        var (study, series, sop) = NewUids();
+        const string title = "E2E Structured Report";
+
+        var filePath = await StoreSrAsync(study, series, sop);
+        try
+        {
+            // 报告级字段已落库
+            Assert.Equal(title, await _fx.QueryScalarAsync<string>(
+                "SELECT DocumentTitle FROM Instances WHERE SopInstanceUid = @Sop", new { Sop = sop.UID }));
+            Assert.Equal("COMPLETE", await _fx.QueryScalarAsync<string>(
+                "SELECT CompletionFlag FROM Instances WHERE SopInstanceUid = @Sop", new { Sop = sop.UID }));
+            Assert.Equal("UNVERIFIED", await _fx.QueryScalarAsync<string>(
+                "SELECT VerificationFlag FROM Instances WHERE SopInstanceUid = @Sop", new { Sop = sop.UID }));
+
+            var encodedTitle = Uri.EscapeDataString(title);
+
+            // QIDO-RS 实例级按 DocumentTitle 过滤命中，且响应暴露报告字段
+            using (var qidoInst = await GetAsync(
+                $"/dicomweb/studies/{study.UID}/series/{series.UID}/instances?DocumentTitle={encodedTitle}",
+                "application/dicom+json"))
             {
-                File.Delete(filePath);
+                Assert.Equal(HttpStatusCode.OK, qidoInst.StatusCode);
+                var body = await qidoInst.Content.ReadAsStringAsync();
+                Assert.Contains(sop.UID, body);
+                // DICOM JSON 使用十六进制标签：00420010 = DocumentTitle
+                Assert.Contains("00420010", body);
+                Assert.Contains(title, body);
             }
+
+            // QIDO-RS 研究级按 DocumentTitle 过滤命中
+            using (var qidoStudy = await GetAsync(
+                $"/dicomweb/studies?DocumentTitle={encodedTitle}", "application/dicom+json"))
+            {
+                Assert.Equal(HttpStatusCode.OK, qidoStudy.StatusCode);
+                Assert.Contains(study.UID, await qidoStudy.Content.ReadAsStringAsync());
+            }
+
+            // DIMSE Image 级 C-FIND 按 DocumentTitle 过滤命中
+            Assert.True(await ImageLevelFindHitsAsync(study, series, sop, title),
+                "image-level C-FIND by DocumentTitle did not return the SR instance");
+        }
+        finally
+        {
+            DeleteTemp(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task SrNonImageRetrieval_FallsBackToDicomOrReturns415()
+    {
+        var (study, series, sop) = NewUids();
+
+        var filePath = await StoreSrAsync(study, series, sop);
+        try
+        {
+            // WADO-RS 帧检索对无像素的 SR 应返回 415，而不是 500
+            using (var frames = await GetAsync($"/dicomweb/studies/{study.UID}/series/{series.UID}/instances/{sop.UID}/frames/1"))
+            {
+                Assert.Equal(HttpStatusCode.UnsupportedMediaType, frames.StatusCode);
+            }
+
+            // 传统 WADO 显式请求 JPEG 渲染对 SR 应返回 415，而不是 500
+            using (var wadoJpeg = await GetAsync(
+                $"/wado?requestType=WADO&studyUID={study.UID}&seriesUID={series.UID}&objectUID={sop.UID}&contentType=image/jpeg"))
+            {
+                Assert.Equal(HttpStatusCode.UnsupportedMediaType, wadoJpeg.StatusCode);
+            }
+
+            // 传统 WADO 未指定内容类型时，SR 应回退为返回 DICOM 本体
+            using (var wadoDefault = await GetAsync(
+                $"/wado?requestType=WADO&studyUID={study.UID}&seriesUID={series.UID}&objectUID={sop.UID}"))
+            {
+                Assert.Equal(HttpStatusCode.OK, wadoDefault.StatusCode);
+                Assert.Equal("application/dicom", wadoDefault.Content.Headers.ContentType?.MediaType);
+            }
+        }
+        finally
+        {
+            DeleteTemp(filePath);
+        }
+    }
+
+    private async Task<string> StoreSrAsync(DicomUID study, DicomUID series, DicomUID sop)
+    {
+        var filePath = Path.Combine(Path.GetTempPath(), "sr_" + Guid.NewGuid().ToString("N") + ".dcm");
+        new DicomFile(CreateMinimalSr(study, series, sop)).Save(filePath);
+
+        DicomStatus? storeStatus = null;
+        var store = _fx.CreateClient(E2EFixture.StorePort, "STORESCP");
+        var cstore = new DicomCStoreRequest(filePath);
+        cstore.OnResponseReceived += (_, r) => storeStatus = r.Status;
+        await store.AddRequestAsync(cstore);
+        await store.SendAsync();
+        Assert.Equal(DicomStatus.Success, storeStatus);
+
+        Assert.True(await _fx.WaitForFileAsync(sop.UID + ".dcm", 15000), "stored SR file not found");
+
+        // 等待异步批量入库落库，确保后续 QIDO/WADO/C-FIND 能检索到
+        Assert.True(await _fx.WaitForAsync(
+            async () => await _fx.QueryCountAsync(
+                "SELECT COUNT(*) FROM Instances WHERE SopInstanceUid = @Sop", new { Sop = sop.UID }) > 0,
+            20000), "SR instance was not persisted to the database");
+        return filePath;
+    }
+
+    private async Task<bool> WaitForQrHitAsync(string studyUid, int timeoutMs = 20000)
+    {
+        bool qrHit = false;
+        await _fx.WaitForAsync(async () =>
+        {
+            var qr = _fx.CreateClient(E2EFixture.QrPort, "QRSCP");
+            var cfind = new DicomCFindRequest(
+                DicomUID.StudyRootQueryRetrieveInformationModelFind,
+                DicomQueryRetrieveLevel.Study,
+                DicomPriority.Medium);
+            cfind.Dataset = new DicomDataset
+            {
+                { DicomTag.QueryRetrieveLevel, "STUDY" },
+                { DicomTag.StudyInstanceUID, studyUid }
+            };
+            cfind.OnResponseReceived += (_, r) =>
+            {
+                if (r.Status == DicomStatus.Pending)
+                {
+                    qrHit |= r.Dataset?.GetSingleValueOrDefault<string>(DicomTag.StudyInstanceUID, "") == studyUid;
+                }
+            };
+            await qr.AddRequestAsync(cfind);
+            await qr.SendAsync();
+            return qrHit;
+        }, timeoutMs);
+        return qrHit;
+    }
+
+    private async Task<bool> ImageLevelFindHitsAsync(DicomUID study, DicomUID series, DicomUID sop, string documentTitle, int timeoutMs = 20000)
+    {
+        bool hit = false;
+        await _fx.WaitForAsync(async () =>
+        {
+            var qr = _fx.CreateClient(E2EFixture.QrPort, "QRSCP");
+            var cfind = new DicomCFindRequest(
+                DicomUID.StudyRootQueryRetrieveInformationModelFind,
+                DicomQueryRetrieveLevel.Image,
+                DicomPriority.Medium);
+            cfind.Dataset = new DicomDataset
+            {
+                { DicomTag.QueryRetrieveLevel, "IMAGE" },
+                { DicomTag.StudyInstanceUID, study.UID },
+                { DicomTag.SeriesInstanceUID, series.UID },
+                { DicomTag.DocumentTitle, documentTitle }
+            };
+            cfind.OnResponseReceived += (_, r) =>
+            {
+                if (r.Status == DicomStatus.Pending)
+                {
+                    hit |= r.Dataset?.GetSingleValueOrDefault<string>(DicomTag.SOPInstanceUID, "") == sop.UID;
+                }
+            };
+            await qr.AddRequestAsync(cfind);
+            await qr.SendAsync();
+            return hit;
+        }, timeoutMs);
+        return hit;
+    }
+
+    private async Task<HttpResponseMessage> GetAsync(string url, string? accept = null)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (!string.IsNullOrEmpty(accept))
+        {
+            request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse(accept));
+        }
+        return await _fx.Http.SendAsync(request);
+    }
+
+    private static (DicomUID Study, DicomUID Series, DicomUID Sop) NewUids() =>
+        (DicomUIDGenerator.GenerateDerivedFromUUID(),
+         DicomUIDGenerator.GenerateDerivedFromUUID(),
+         DicomUIDGenerator.GenerateDerivedFromUUID());
+
+    private static void DeleteTemp(string filePath)
+    {
+        if (File.Exists(filePath))
+        {
+            File.Delete(filePath);
         }
     }
 
@@ -90,6 +272,14 @@ public class SrRetrieveWorkflowTests
         var contentSeq = new DicomSequence(DicomTag.ContentSequence);
         contentSeq.Items.Add(root);
 
+        var rootConceptSeq = new DicomSequence(DicomTag.ConceptNameCodeSequence);
+        rootConceptSeq.Items.Add(new DicomDataset
+        {
+            { DicomTag.CodeValue, "18748-4" },
+            { DicomTag.CodingSchemeDesignator, "LN" },
+            { DicomTag.CodeMeaning, "Diagnostic imaging study" }
+        });
+
         var result = new DicomDataset();
         result.AddOrUpdate(DicomTag.SOPClassUID, DicomUID.BasicTextSRStorage.UID);
         result.AddOrUpdate(DicomTag.SOPInstanceUID, sop.UID);
@@ -104,6 +294,11 @@ public class SrRetrieveWorkflowTests
         result.AddOrUpdate(DicomTag.StudyTime, "120000");
         result.AddOrUpdate(DicomTag.StudyID, "E2E-STUDY");
         result.AddOrUpdate(DicomTag.StudyDescription, "E2E SR Study");
+        // 报告级 SR 属性（用于专属查询键验证）
+        result.AddOrUpdate(DicomTag.DocumentTitle, "E2E Structured Report");
+        result.AddOrUpdate(DicomTag.CompletionFlag, "COMPLETE");
+        result.AddOrUpdate(DicomTag.VerificationFlag, "UNVERIFIED");
+        result.Add(DicomTag.ConceptNameCodeSequence, rootConceptSeq);
         result.Add(DicomTag.ContentSequence, contentSeq);
         return result;
     }

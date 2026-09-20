@@ -101,13 +101,19 @@ public sealed class DicomDatasetPersistence : IDisposable
                 Columns, Rows, PhotometricInterpretation, BitsAllocated, BitsStored,
                 PixelRepresentation, SamplesPerPixel, PixelSpacing, HighBit,
                 ImageOrientationPatient, ImagePositionPatient, FrameOfReferenceUID,
-                ImageType, WindowCenter, WindowWidth, CreateTime
+                ImageType, WindowCenter, WindowWidth,
+                DocumentTitle, CompletionFlag, VerificationFlag,
+                ConceptCodeValue, ConceptCodingSchemeDesignator, ConceptCodeMeaning,
+                CreateTime
             ) VALUES (
                 @SopInstanceUid, @SeriesInstanceUid, @SopClassUid, @InstanceNumber, @FilePath,
                 @Columns, @Rows, @PhotometricInterpretation, @BitsAllocated, @BitsStored,
                 @PixelRepresentation, @SamplesPerPixel, @PixelSpacing, @HighBit,
                 @ImageOrientationPatient, @ImagePositionPatient, @FrameOfReferenceUID,
-                @ImageType, @WindowCenter, @WindowWidth, @CreateTime
+                @ImageType, @WindowCenter, @WindowWidth,
+                @DocumentTitle, @CompletionFlag, @VerificationFlag,
+                @ConceptCodeValue, @ConceptCodingSchemeDesignator, @ConceptCodeMeaning,
+                @CreateTime
             )";
     }
 
@@ -472,6 +478,8 @@ public sealed class DicomDatasetPersistence : IDisposable
             CreateTime = now
         });
 
+        var sr = SrSupport.IsStructuredReport(dataset) ? SrSupport.Extract(dataset) : null;
+
         batchData.Instances.Add(new Instance
         {
             SopInstanceUid = dataset.GetSingleValue<string>(DicomTag.SOPInstanceUID),
@@ -518,6 +526,12 @@ public sealed class DicomDatasetPersistence : IDisposable
                     ? string.Join("\\", dataset.GetValues<string>(DicomTag.WindowWidth))
                     : dataset.GetSingleValueOrDefault<string>(DicomTag.WindowWidth, string.Empty))
                 : string.Empty,
+            DocumentTitle = sr?.DocumentTitle,
+            CompletionFlag = sr?.CompletionFlag,
+            VerificationFlag = sr?.VerificationFlag,
+            ConceptCodeValue = sr?.ConceptCodeValue,
+            ConceptCodingSchemeDesignator = sr?.ConceptCodingSchemeDesignator,
+            ConceptCodeMeaning = sr?.ConceptCodeMeaning,
             CreateTime = now
         });
     }

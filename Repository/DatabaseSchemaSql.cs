@@ -90,6 +90,13 @@ public static class DatabaseSchemaSql
                 ImageType TEXT,
                 WindowCenter TEXT,
                 WindowWidth TEXT,
+                -- 结构化报告(SR)报告级字段（非 SR 实例为空）
+                DocumentTitle TEXT,
+                CompletionFlag TEXT,
+                VerificationFlag TEXT,
+                ConceptCodeValue TEXT,
+                ConceptCodingSchemeDesignator TEXT,
+                ConceptCodeMeaning TEXT,
                 CreateTime DATETIME,
                 FOREIGN KEY(SeriesInstanceUid) REFERENCES Series(SeriesInstanceUid)
             )";

@@ -172,6 +172,15 @@ public class DicomWebController(
             }
 
             var dicomFile = await DicomFile.OpenAsync(filePath);
+
+            // 非图像实例（如结构化报告 SR）没有帧，显式返回 415 而非 500
+            if (!dicomFile.Dataset.Contains(DicomTag.PixelData))
+            {
+                DicomLogger.Warning("DICOMweb", "实例无像素数据，无法检索帧 - Instance: {Instance}", instance);
+                return StatusCode(StatusCodes.Status415UnsupportedMediaType,
+                    "Instance has no pixel data; frame retrieval is not supported");
+            }
+
             var frameNumbers = ParseFrameList(frames);
             var pixelData = DicomPixelData.Create(dicomFile.Dataset);
             var totalFrames = pixelData.NumberOfFrames;

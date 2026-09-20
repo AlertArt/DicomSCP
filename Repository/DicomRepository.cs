@@ -78,27 +78,32 @@ public class DicomRepository(IConfiguration configuration)
         }
     }
 
-    public List<Instance> GetInstancesBySeriesUid(string studyInstanceUid, string seriesInstanceUid, bool throwOnError = false)
+    public List<Instance> GetInstancesBySeriesUid(
+        string studyInstanceUid,
+        string seriesInstanceUid,
+        IReadOnlyDictionary<DicomTag, IReadOnlyList<string>>? matches = null,
+        bool fuzzy = false,
+        bool throwOnError = false)
     {
         try
         {
             using var connection = CreateConnection();
-            var sql = @"
+            var (whereSql, parameters) = BuildQidoWhere(QidoInstanceColumns, matches ?? EmptyMatches, fuzzy);
+            parameters.Add("@StudyInstanceUid", studyInstanceUid);
+            parameters.Add("@SeriesInstanceUid", seriesInstanceUid);
+
+            var sql = $@"
                 SELECT i.*, s.StudyInstanceUid, s.Modality
                 FROM Instances i
                 JOIN Series s ON i.SeriesInstanceUid = s.SeriesInstanceUid
                 WHERE s.StudyInstanceUid = @StudyInstanceUid 
-                AND i.SeriesInstanceUid = @SeriesInstanceUid
+                AND i.SeriesInstanceUid = @SeriesInstanceUid {whereSql}
                 ORDER BY CAST(i.InstanceNumber as INTEGER)";
 
             LogDebug("执行图像查询 - SQL: {Sql}, StudyInstanceUid: {StudyInstanceUid}, SeriesInstanceUid: {SeriesInstanceUid}", 
                 sql, studyInstanceUid, seriesInstanceUid);
 
-            var instances = connection.Query<Instance>(sql, new 
-            { 
-                StudyInstanceUid = studyInstanceUid,
-                SeriesInstanceUid = seriesInstanceUid
-            });
+            var instances = connection.Query<Instance>(sql, parameters);
 
             var result = instances?.ToList() ?? new List<Instance>();
             LogInformation("图像查询完成 - StudyInstanceUid: {StudyInstanceUid}, SeriesInstanceUid: {SeriesInstanceUid}, 返回记录数: {Count}", 
@@ -113,6 +118,9 @@ public class DicomRepository(IConfiguration configuration)
             return new List<Instance>();
         }
     }
+
+    private static readonly IReadOnlyDictionary<DicomTag, IReadOnlyList<string>> EmptyMatches =
+        new Dictionary<DicomTag, IReadOnlyList<string>>();
 
     public IEnumerable<Instance> GetInstancesByStudyUid(string studyInstanceUid, bool throwOnError = false)
     {
@@ -456,7 +464,11 @@ public class DicomRepository(IConfiguration configuration)
         [DicomTag.StudyDescription] = "s.StudyDescription",
         [DicomTag.ModalitiesInStudy] = "s.Modality",
         [DicomTag.Modality] = "s.Modality",
-        [DicomTag.InstitutionName] = "s.InstitutionName"
+        [DicomTag.InstitutionName] = "s.InstitutionName",
+        // SR 报告级过滤（研究查询已 JOIN Instances i）
+        [DicomTag.DocumentTitle] = "i.DocumentTitle",
+        [DicomTag.CompletionFlag] = "i.CompletionFlag",
+        [DicomTag.VerificationFlag] = "i.VerificationFlag"
     };
 
     private static readonly Dictionary<DicomTag, string> QidoSeriesColumns = new()
@@ -490,7 +502,11 @@ public class DicomRepository(IConfiguration configuration)
         [DicomTag.FrameOfReferenceUID] = "i.FrameOfReferenceUID",
         [DicomTag.ImageType] = "i.ImageType",
         [DicomTag.WindowCenter] = "i.WindowCenter",
-        [DicomTag.WindowWidth] = "i.WindowWidth"
+        [DicomTag.WindowWidth] = "i.WindowWidth",
+        // SR 报告级过滤键
+        [DicomTag.DocumentTitle] = "i.DocumentTitle",
+        [DicomTag.CompletionFlag] = "i.CompletionFlag",
+        [DicomTag.VerificationFlag] = "i.VerificationFlag"
     };
 
     /// <summary>将 QIDO 请求中的 DICOM 标签映射到数据库列并构造 SQL 过滤条件。</summary>

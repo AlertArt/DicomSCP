@@ -83,16 +83,17 @@ public static class DicomWebHelpers
         ds.Add(DicomTag.SOPInstanceUID, instance.SopInstanceUid);
         ds.Add(DicomTag.SOPClassUID, instance.SopClassUid);
         ds.Add(DicomTag.InstanceNumber, instance.InstanceNumber ?? string.Empty);
-        ds.Add(DicomTag.Rows, instance.Rows);
-        ds.Add(DicomTag.Columns, instance.Columns);
+        // US（无符号短整型）属性必须用 ushort 构造，否则 fo-dicom 拒绝 int 值
+        ds.Add(DicomTag.Rows, ToUS(instance.Rows));
+        ds.Add(DicomTag.Columns, ToUS(instance.Columns));
         ds.Add(DicomTag.PhotometricInterpretation, instance.PhotometricInterpretation ?? string.Empty);
-        ds.Add(DicomTag.BitsAllocated, instance.BitsAllocated);
-        ds.Add(DicomTag.BitsStored, instance.BitsStored);
-        ds.Add(DicomTag.PixelRepresentation, instance.PixelRepresentation);
-        ds.Add(DicomTag.SamplesPerPixel, instance.SamplesPerPixel);
+        ds.Add(DicomTag.BitsAllocated, ToUS(instance.BitsAllocated));
+        ds.Add(DicomTag.BitsStored, ToUS(instance.BitsStored));
+        ds.Add(DicomTag.PixelRepresentation, ToUS(instance.PixelRepresentation));
+        ds.Add(DicomTag.SamplesPerPixel, ToUS(instance.SamplesPerPixel));
         if (!string.IsNullOrEmpty(instance.PixelSpacing))
             ds.Add(DicomTag.PixelSpacing, instance.PixelSpacing);
-        ds.Add(DicomTag.HighBit, instance.HighBit);
+        ds.Add(DicomTag.HighBit, ToUS(instance.HighBit));
         if (!string.IsNullOrEmpty(instance.ImageOrientationPatient))
             ds.Add(DicomTag.ImageOrientationPatient, instance.ImageOrientationPatient);
         if (!string.IsNullOrEmpty(instance.ImagePositionPatient))
@@ -105,6 +106,30 @@ public static class DicomWebHelpers
             ds.Add(DicomTag.WindowCenter, instance.WindowCenter);
         if (!string.IsNullOrEmpty(instance.WindowWidth))
             ds.Add(DicomTag.WindowWidth, instance.WindowWidth);
+        // SR 报告级字段
+        if (!string.IsNullOrEmpty(instance.DocumentTitle))
+            ds.Add(DicomTag.DocumentTitle, instance.DocumentTitle);
+        if (!string.IsNullOrEmpty(instance.CompletionFlag))
+            ds.Add(DicomTag.CompletionFlag, instance.CompletionFlag);
+        if (!string.IsNullOrEmpty(instance.VerificationFlag))
+            ds.Add(DicomTag.VerificationFlag, instance.VerificationFlag);
+        if (!string.IsNullOrEmpty(instance.ConceptCodeValue) ||
+            !string.IsNullOrEmpty(instance.ConceptCodeMeaning))
+        {
+            var concept = new DicomDataset();
+            if (!string.IsNullOrEmpty(instance.ConceptCodeValue))
+                concept.Add(DicomTag.CodeValue, instance.ConceptCodeValue);
+            if (!string.IsNullOrEmpty(instance.ConceptCodingSchemeDesignator))
+                concept.Add(DicomTag.CodingSchemeDesignator, instance.ConceptCodingSchemeDesignator);
+            if (!string.IsNullOrEmpty(instance.ConceptCodeMeaning))
+                concept.Add(DicomTag.CodeMeaning, instance.ConceptCodeMeaning);
+            var conceptSeq = new DicomSequence(DicomTag.ConceptNameCodeSequence);
+            conceptSeq.Items.Add(concept);
+            ds.Add(DicomTag.ConceptNameCodeSequence, conceptSeq);
+        }
         return ds;
     }
+
+    /// <summary>将数据库中的整数字段安全转换为 US（无符号短整型）值。</summary>
+    private static ushort ToUS(int value) => value < 0 ? (ushort)0 : (ushort)Math.Min(value, ushort.MaxValue);
 }

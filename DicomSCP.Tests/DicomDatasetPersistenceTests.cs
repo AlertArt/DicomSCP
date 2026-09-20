@@ -229,4 +229,71 @@ public class DicomDatasetPersistenceTests : IDisposable
             if (Directory.Exists(failedQueuePath)) Directory.Delete(failedQueuePath, recursive: true);
         }
     }
+
+    [Fact]
+    public void BuildBatchData_StructuredReport_ExtractsReportFields()
+    {
+        var ds = DicomTestData.MakeStructuredReport(
+            documentTitle: "Chest Report",
+            completionFlag: "COMPLETE",
+            verificationFlag: "VERIFIED",
+            conceptCodeValue: "18748-4",
+            conceptScheme: "LN",
+            conceptMeaning: "Diagnostic imaging study");
+
+        var batch = _persistence.BuildBatchData(
+            new List<(FellowOakDicom.DicomDataset Dataset, string FilePath)> { (ds, "sr.dcm") },
+            DateTime.Now);
+
+        var inst = Assert.Single(batch.Instances);
+        Assert.Equal("Chest Report", inst.DocumentTitle);
+        Assert.Equal("COMPLETE", inst.CompletionFlag);
+        Assert.Equal("VERIFIED", inst.VerificationFlag);
+        Assert.Equal("18748-4", inst.ConceptCodeValue);
+        Assert.Equal("LN", inst.ConceptCodingSchemeDesignator);
+        Assert.Equal("Diagnostic imaging study", inst.ConceptCodeMeaning);
+    }
+
+    [Fact]
+    public void BuildBatchData_Image_HasNoReportFields()
+    {
+        var batch = _persistence.BuildBatchData(
+            new List<(FellowOakDicom.DicomDataset Dataset, string FilePath)> { (DicomTestData.MakeInstance(), "img.dcm") },
+            DateTime.Now);
+
+        var inst = Assert.Single(batch.Instances);
+        Assert.True(string.IsNullOrEmpty(inst.DocumentTitle));
+        Assert.True(string.IsNullOrEmpty(inst.CompletionFlag));
+        Assert.True(string.IsNullOrEmpty(inst.VerificationFlag));
+    }
+
+    [Fact]
+    public async Task QidoQuery_ByDocumentTitle_FiltersSrReports()
+    {
+        await DatabaseInitializer.InitializeAsync(_db.ConnectionString);
+
+        await Seed.InsertAsync(_db, _persistence,
+            DicomTestData.MakeStructuredReport(
+                studyUid: "1.2.3.4.950.1", seriesUid: "1.2.3.4.950.2", sopUid: "1.2.3.4.950.3",
+                documentTitle: "Chest Report"),
+            DicomTestData.MakeInstance(
+                studyUid: "1.2.3.4.951.1", seriesUid: "1.2.3.4.951.2", sopUid: "1.2.3.4.951.3"));
+
+        var repository = new DicomRepository(_db.Config);
+        var matches = new Dictionary<DicomTag, IReadOnlyList<string>>
+        {
+            [DicomTag.DocumentTitle] = new[] { "Chest Report" }
+        };
+
+        // 实例级：仅命中 SR 报告
+        var instances = repository.QidoQueryInstances("1.2.3.4.950.1", "1.2.3.4.950.2", matches, false, null, null);
+        var inst = Assert.Single(instances);
+        Assert.Equal("1.2.3.4.950.3", inst.SopInstanceUid);
+        Assert.Equal("Chest Report", inst.DocumentTitle);
+
+        // 研究级：仅命中含该报告的 SR 研究
+        var studies = repository.QidoQueryStudies(matches, false, null, null);
+        var study = Assert.Single(studies);
+        Assert.Equal("1.2.3.4.950.1", study.StudyInstanceUid);
+    }
 }

@@ -67,6 +67,13 @@ public class Instance
     public string? ImageType { get; set; }
     public string? WindowCenter { get; set; }
     public string? WindowWidth { get; set; }
+    // 结构化报告(SR)报告级字段（非 SR 实例为空）
+    public string? DocumentTitle { get; set; }
+    public string? CompletionFlag { get; set; }
+    public string? VerificationFlag { get; set; }
+    public string? ConceptCodeValue { get; set; }
+    public string? ConceptCodingSchemeDesignator { get; set; }
+    public string? ConceptCodeMeaning { get; set; }
     public DateTime CreateTime { get; set; }
 }
 

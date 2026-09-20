@@ -16,6 +16,7 @@ public static class DatabaseSchemaMigrator
     {
         await EnsureStudyRemarkColumnAsync(connection, transaction);
         await EnsureMustChangePasswordColumnAsync(connection, transaction);
+        await EnsureSrInstanceColumnsAsync(connection, transaction);
     }
 
     private static async Task EnsureStudyRemarkColumnAsync(SqliteConnection connection, IDbTransaction? transaction)
@@ -58,6 +59,35 @@ public static class DatabaseSchemaMigrator
             await connection.ExecuteAsync(
                 "UPDATE Users SET MustChangePassword = 1 WHERE Username = 'admin'",
                 transaction: transaction);
+        }
+    }
+
+    /// <summary>为历史库补齐 Instances 表的结构化报告(SR)字段。</summary>
+    private static async Task EnsureSrInstanceColumnsAsync(SqliteConnection connection, IDbTransaction? transaction)
+    {
+        var srColumns = new (string Name, string Type)[]
+        {
+            ("DocumentTitle", "TEXT"),
+            ("CompletionFlag", "TEXT"),
+            ("VerificationFlag", "TEXT"),
+            ("ConceptCodeValue", "TEXT"),
+            ("ConceptCodingSchemeDesignator", "TEXT"),
+            ("ConceptCodeMeaning", "TEXT"),
+        };
+
+        foreach (var (name, type) in srColumns)
+        {
+            var exists = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM pragma_table_info('Instances') WHERE name = @Name",
+                new { Name = name },
+                transaction: transaction);
+
+            if (exists == 0)
+            {
+                await connection.ExecuteAsync(
+                    $"ALTER TABLE Instances ADD COLUMN {name} {type}",
+                    transaction: transaction);
+            }
         }
     }
 }

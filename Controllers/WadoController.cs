@@ -72,10 +72,21 @@ namespace DicomSCP.Controllers
                 // 读取DICOM文件
                 var dicomFile = await DicomFile.OpenAsync(filePath);
 
+                // 判断是否为带像素数据的图像实例（SR/KOS/PR 等无像素）
+                var hasPixelData = HasPixelData(dicomFile.Dataset);
+
                 // 确定最终的内容类型
-                string finalContentType = PickFinalContentType(contentType, dicomFile);
+                string finalContentType = PickFinalContentType(contentType, dicomFile, hasPixelData);
                 DicomLogger.Information("WADO", "最终内容类型: {ContentType}", finalContentType);
-                
+
+                // 非图像实例（如结构化报告 SR）无法渲染为 JPEG，显式请求时返回 415
+                if (finalContentType == JpegImageContentType && !hasPixelData)
+                {
+                    DicomLogger.Warning("WADO", "实例无像素数据，无法渲染为JPEG - ObjectUID: {ObjectUID}", objectUID);
+                    return StatusCode(StatusCodes.Status415UnsupportedMediaType,
+                        "Instance has no pixel data; JPEG rendering is not supported");
+                }
+
                 // 根据请求内容类型返回
                 if (finalContentType == JpegImageContentType)
                 {
@@ -159,11 +170,17 @@ namespace DicomSCP.Controllers
             }
         }
 
-        private string PickFinalContentType(string? contentType, DicomFile dicomFile)
+        private string PickFinalContentType(string? contentType, DicomFile dicomFile, bool hasPixelData)
         {
-            // 如果没有指定内容类型，根据图像类型选择默认值
+            // 如果没有指定内容类型，根据是否为图像选择默认值
             if (string.IsNullOrEmpty(contentType))
             {
+                // 非图像实例（如结构化报告 SR）默认返回 DICOM，避免渲染不存在的像素数据
+                if (!hasPixelData)
+                {
+                    return AppDicomContentType;
+                }
+
                 // 获取帧数
                 var numberOfFrames = dicomFile.Dataset.GetSingleValueOrDefault(DicomTag.NumberOfFrames, 1);
                 // 多帧图像默认返回 DICOM，单帧图像默认返回 JPEG
@@ -171,6 +188,13 @@ namespace DicomSCP.Controllers
             }
 
             return contentType;
+        }
+
+        /// <summary>判断数据集是否包含像素数据（SR/KOS/PR 等非图像实例为 false）。</summary>
+        private static bool HasPixelData(DicomDataset dataset)
+        {
+            return dataset.Contains(DicomTag.PixelData) &&
+                   dataset.GetDicomItem<DicomItem>(DicomTag.PixelData) != null;
         }
 
         private async Task<IActionResult> GetDicomBytes(DicomFile dicomFile, string? transferSyntax, string filePath)

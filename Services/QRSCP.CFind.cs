@@ -278,8 +278,23 @@ public partial class QRSCP
             return responses;
         }
 
+        // 构建 SR 专属过滤键（SOPClassUID / DocumentTitle / CompletionFlag / VerificationFlag）
+        var matches = new Dictionary<DicomTag, IReadOnlyList<string>>();
+        void AddMatch(DicomTag tag)
+        {
+            var value = request.Dataset.GetSingleValueOrDefault<string>(tag, string.Empty);
+            if (!string.IsNullOrEmpty(value))
+            {
+                matches[tag] = new[] { value };
+            }
+        }
+        AddMatch(DicomTag.SOPClassUID);
+        AddMatch(DicomTag.DocumentTitle);
+        AddMatch(DicomTag.CompletionFlag);
+        AddMatch(DicomTag.VerificationFlag);
+
         // 使 Task.Run 来异步执行数据库查询
-        var instances = await Task.Run(() => _repository.GetInstancesBySeriesUid(studyInstanceUid, seriesInstanceUid));
+        var instances = await Task.Run(() => _repository.GetInstancesBySeriesUid(studyInstanceUid, seriesInstanceUid, matches));
 
         foreach (var instance in instances)
         {
@@ -303,6 +318,14 @@ public partial class QRSCP
                 dataset.Add(DicomTag.SOPInstanceUID, validSopInstanceUid);
                 dataset.Add(DicomTag.SOPClassUID, validSopClassUid);
                 dataset.Add(DicomTag.InstanceNumber, instance.InstanceNumber ?? string.Empty);
+
+                // 回显 SR 报告级字段（非 SR 实例为空，跳过）
+                if (!string.IsNullOrEmpty(instance.DocumentTitle))
+                    dataset.Add(DicomTag.DocumentTitle, instance.DocumentTitle);
+                if (!string.IsNullOrEmpty(instance.CompletionFlag))
+                    dataset.Add(DicomTag.CompletionFlag, instance.CompletionFlag);
+                if (!string.IsNullOrEmpty(instance.VerificationFlag))
+                    dataset.Add(DicomTag.VerificationFlag, instance.VerificationFlag);
 
                 response.Dataset = dataset;
                 responses.Add(response);

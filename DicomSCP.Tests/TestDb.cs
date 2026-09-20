@@ -73,6 +73,46 @@ public static class DicomTestData
         ds.AddOrUpdate(DicomTag.InstanceNumber, instanceNumber);
         return ds;
     }
+
+    /// <summary>构造最小结构化报告(SR)数据集，含报告级字段与概念名。</summary>
+    public static DicomDataset MakeStructuredReport(
+        string patientId = "PATSR",
+        string patientName = "Sr^Patient",
+        string studyUid = "1.2.840.113619.2.9.1",
+        string seriesUid = "1.2.840.113619.2.9.2",
+        string sopUid = "1.2.840.113619.2.9.3",
+        string studyDate = "20240101",
+        string documentTitle = "Structured Report",
+        string completionFlag = "COMPLETE",
+        string verificationFlag = "UNVERIFIED",
+        string conceptCodeValue = "18748-4",
+        string conceptScheme = "LN",
+        string conceptMeaning = "Diagnostic imaging study")
+    {
+        var concept = new DicomDataset();
+        concept.AddOrUpdate(DicomTag.CodeValue, conceptCodeValue);
+        concept.AddOrUpdate(DicomTag.CodingSchemeDesignator, conceptScheme);
+        concept.AddOrUpdate(DicomTag.CodeMeaning, conceptMeaning);
+        var conceptSeq = new DicomSequence(DicomTag.ConceptNameCodeSequence);
+        conceptSeq.Items.Add(concept);
+
+        var ds = new DicomDataset();
+        ds.AddOrUpdate(DicomTag.PatientID, patientId);
+        ds.AddOrUpdate(DicomTag.PatientName, patientName);
+        ds.AddOrUpdate(DicomTag.StudyInstanceUID, studyUid);
+        ds.AddOrUpdate(DicomTag.SeriesInstanceUID, seriesUid);
+        ds.AddOrUpdate(DicomTag.SOPInstanceUID, sopUid);
+        ds.AddOrUpdate(DicomTag.SOPClassUID, DicomUID.BasicTextSRStorage.UID);
+        ds.AddOrUpdate(DicomTag.StudyDate, studyDate);
+        ds.AddOrUpdate(DicomTag.Modality, "SR");
+        ds.AddOrUpdate(DicomTag.SeriesNumber, "1");
+        ds.AddOrUpdate(DicomTag.InstanceNumber, "1");
+        ds.AddOrUpdate(DicomTag.DocumentTitle, documentTitle);
+        ds.AddOrUpdate(DicomTag.CompletionFlag, completionFlag);
+        ds.AddOrUpdate(DicomTag.VerificationFlag, verificationFlag);
+        ds.Add(DicomTag.ConceptNameCodeSequence, conceptSeq);
+        return ds;
+    }
 }
 
 /// <summary>
