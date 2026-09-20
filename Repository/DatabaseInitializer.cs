@@ -37,6 +37,7 @@ public static class DatabaseInitializer
         await connection.ExecuteAsync(DatabaseSchemaSql.CreateStudiesTable, transaction: transaction);
         await connection.ExecuteAsync(DatabaseSchemaSql.CreateSeriesTable, transaction: transaction);
         await connection.ExecuteAsync(DatabaseSchemaSql.CreateInstancesTable, transaction: transaction);
+        await connection.ExecuteAsync(DatabaseSchemaSql.CreateSrReferencedInstancesTable, transaction: transaction);
         await connection.ExecuteAsync(DatabaseSchemaSql.CreateWorklistTable, transaction: transaction);
         await connection.ExecuteAsync(DatabaseSchemaSql.CreateUsersTable, transaction: transaction);
 

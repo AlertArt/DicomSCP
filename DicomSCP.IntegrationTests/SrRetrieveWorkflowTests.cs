@@ -149,10 +149,69 @@ public class SrRetrieveWorkflowTests
         }
     }
 
-    private async Task<string> StoreSrAsync(DicomUID study, DicomUID series, DicomUID sop)
+    [Fact]
+    public async Task SrEvidenceLinksReportToReferencedImage()
+    {
+        // 先存入一张 CT 图像，作为 SR 的证据
+        var (imagePath, imageSop, imageStudy, imageSeries) = TestData.CreateMinimalImage();
+        try
+        {
+            DicomStatus? imageStatus = null;
+            var store = _fx.CreateClient(E2EFixture.StorePort, "STORESCP");
+            var imageRequest = new DicomCStoreRequest(imagePath);
+            imageRequest.OnResponseReceived += (_, r) => imageStatus = r.Status;
+            await store.AddRequestAsync(imageRequest);
+            await store.SendAsync();
+            Assert.Equal(DicomStatus.Success, imageStatus);
+
+            // 等待图像异步批量入库，保证关联查询能富化到本地实例
+            Assert.True(await _fx.WaitForAsync(
+                async () => await _fx.QueryCountAsync(
+                    "SELECT COUNT(*) FROM Instances WHERE SopInstanceUid = @Sop", new { Sop = imageSop }) > 0,
+                20000), "referenced image was not persisted to the database");
+        }
+        finally
+        {
+            var dir = Path.GetDirectoryName(imagePath);
+            if (dir != null && Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+
+        var (study, series, sop) = NewUids();
+        var srPath = await StoreSrAsync(study, series, sop, (imageStudy, imageSeries, imageSop));
+        try
+        {
+            // 报告 → 引用图像
+            using (var references = await GetAsync($"/api/Sr/{sop.UID}/references", "application/json"))
+            {
+                Assert.Equal(HttpStatusCode.OK, references.StatusCode);
+                var body = await references.Content.ReadAsStringAsync();
+                Assert.Contains(imageSop, body);
+                Assert.Contains("\"presentLocally\":true", body);
+            }
+
+            // 图像 → 引用它的报告
+            using (var referencing = await GetAsync($"/api/Sr/referencing/{imageSop}", "application/json"))
+            {
+                Assert.Equal(HttpStatusCode.OK, referencing.StatusCode);
+                var body = await referencing.Content.ReadAsStringAsync();
+                Assert.Contains(sop.UID, body);
+                Assert.Contains("E2E Structured Report", body);
+            }
+        }
+        finally
+        {
+            DeleteTemp(srPath);
+        }
+    }
+
+    private async Task<string> StoreSrAsync(DicomUID study, DicomUID series, DicomUID sop,
+        (string Study, string Series, string Sop)? evidence = null)
     {
         var filePath = Path.Combine(Path.GetTempPath(), "sr_" + Guid.NewGuid().ToString("N") + ".dcm");
-        new DicomFile(CreateMinimalSr(study, series, sop)).Save(filePath);
+        new DicomFile(CreateMinimalSr(study, series, sop, evidence)).Save(filePath);
 
         DicomStatus? storeStatus = null;
         var store = _fx.CreateClient(E2EFixture.StorePort, "STORESCP");
@@ -255,7 +314,8 @@ public class SrRetrieveWorkflowTests
         }
     }
 
-    private static DicomDataset CreateMinimalSr(DicomUID study, DicomUID series, DicomUID sop)
+    private static DicomDataset CreateMinimalSr(DicomUID study, DicomUID series, DicomUID sop,
+        (string Study, string Series, string Sop)? evidence = null)
     {
         var concept = new DicomDataset();
         concept.AddOrUpdate(DicomTag.CodeValue, "121311");
@@ -300,6 +360,30 @@ public class SrRetrieveWorkflowTests
         result.AddOrUpdate(DicomTag.VerificationFlag, "UNVERIFIED");
         result.Add(DicomTag.ConceptNameCodeSequence, rootConceptSeq);
         result.Add(DicomTag.ContentSequence, contentSeq);
+
+        if (evidence is { } ev)
+        {
+            var sopItem = new DicomDataset
+            {
+                { DicomTag.ReferencedSOPClassUID, DicomUID.CTImageStorage.UID },
+                { DicomTag.ReferencedSOPInstanceUID, ev.Sop }
+            };
+            var sopSeq = new DicomSequence(DicomTag.ReferencedSOPSequence);
+            sopSeq.Items.Add(sopItem);
+
+            var seriesItem = new DicomDataset { { DicomTag.SeriesInstanceUID, ev.Series } };
+            seriesItem.Add(DicomTag.ReferencedSOPSequence, sopSeq);
+            var seriesSeq = new DicomSequence(DicomTag.ReferencedSeriesSequence);
+            seriesSeq.Items.Add(seriesItem);
+
+            var studyItem = new DicomDataset { { DicomTag.StudyInstanceUID, ev.Study } };
+            studyItem.Add(DicomTag.ReferencedSeriesSequence, seriesSeq);
+            var studySeq = new DicomSequence(DicomTag.CurrentRequestedProcedureEvidenceSequence);
+            studySeq.Items.Add(studyItem);
+
+            result.Add(DicomTag.CurrentRequestedProcedureEvidenceSequence, studySeq);
+        }
+
         return result;
     }
 }

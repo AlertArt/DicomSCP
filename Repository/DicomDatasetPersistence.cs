@@ -115,6 +115,15 @@ public sealed class DicomDatasetPersistence : IDisposable
                 @ConceptCodeValue, @ConceptCodingSchemeDesignator, @ConceptCodeMeaning,
                 @CreateTime
             )";
+
+        public const string InsertSrReference = @"
+            INSERT OR IGNORE INTO SrReferencedInstances (
+                SrSopInstanceUid, ReferencedSopInstanceUid, ReferencedSopClassUid,
+                SeriesInstanceUid, StudyInstanceUid, CreateTime
+            ) VALUES (
+                @SrSopInstanceUid, @ReferencedSopInstanceUid, @ReferencedSopClassUid,
+                @SeriesInstanceUid, @StudyInstanceUid, @CreateTime
+            )";
     }
 
     public sealed class BatchData
@@ -123,7 +132,8 @@ public sealed class DicomDatasetPersistence : IDisposable
         public List<Study> Studies { get; } = [];
         public List<Series> Series { get; } = [];
         public List<Instance> Instances { get; } = [];
-        public bool HasData => Patients.Count > 0 || Studies.Count > 0 || Series.Count > 0 || Instances.Count > 0;
+        public List<SrReference> SrReferences { get; } = [];
+        public bool HasData => Patients.Count > 0 || Studies.Count > 0 || Series.Count > 0 || Instances.Count > 0 || SrReferences.Count > 0;
     }
 
     public sealed record WriteResult(int InsertedPatients, int InsertedStudies, int InsertedSeries, int InsertedInstances);
@@ -316,6 +326,10 @@ public sealed class DicomDatasetPersistence : IDisposable
         var insertedStudies = await connection.ExecuteAsync(SqlQueries.InsertStudy, batchData.Studies, transaction);
         var insertedSeries = await connection.ExecuteAsync(SqlQueries.InsertSeries, batchData.Series, transaction);
         var insertedInstances = await connection.ExecuteAsync(SqlQueries.InsertInstance, batchData.Instances, transaction);
+        if (batchData.SrReferences.Count > 0)
+        {
+            await connection.ExecuteAsync(SqlQueries.InsertSrReference, batchData.SrReferences, transaction);
+        }
         return new WriteResult(insertedPatients, insertedStudies, insertedSeries, insertedInstances);
     }
 
@@ -534,6 +548,16 @@ public sealed class DicomDatasetPersistence : IDisposable
             ConceptCodeMeaning = sr?.ConceptCodeMeaning,
             CreateTime = now
         });
+
+        // SR 证据链：记录报告引用的图像/对象，建立报告 ↔ 图像关联
+        if (sr != null)
+        {
+            foreach (var reference in SrSupport.ExtractReferences(dataset))
+            {
+                reference.CreateTime = now;
+                batchData.SrReferences.Add(reference);
+            }
+        }
     }
 
     private static string GetStudyModality(DicomDataset dataset)

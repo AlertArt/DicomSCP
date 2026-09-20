@@ -113,6 +113,43 @@ public static class DicomTestData
         ds.Add(DicomTag.ConceptNameCodeSequence, conceptSeq);
         return ds;
     }
+
+    /// <summary>为 SR 数据集追加证据链（CurrentRequestedProcedureEvidenceSequence）。</summary>
+    public static void AddEvidence(
+        DicomDataset sr,
+        string referencedStudyUid,
+        string referencedSeriesUid,
+        string referencedSopUid,
+        string referencedSopClassUid = "1.2.840.10008.5.1.4.1.1.2")
+    {
+        var sopItem = new DicomDataset
+        {
+            { DicomTag.ReferencedSOPClassUID, referencedSopClassUid },
+            { DicomTag.ReferencedSOPInstanceUID, referencedSopUid }
+        };
+        var sopSeq = new DicomSequence(DicomTag.ReferencedSOPSequence);
+        sopSeq.Items.Add(sopItem);
+
+        var seriesItem = new DicomDataset
+        {
+            { DicomTag.SeriesInstanceUID, referencedSeriesUid }
+        };
+        seriesItem.Add(DicomTag.ReferencedSOPSequence, sopSeq);
+
+        var seriesSeq = new DicomSequence(DicomTag.ReferencedSeriesSequence);
+        seriesSeq.Items.Add(seriesItem);
+
+        var studyItem = new DicomDataset
+        {
+            { DicomTag.StudyInstanceUID, referencedStudyUid }
+        };
+        studyItem.Add(DicomTag.ReferencedSeriesSequence, seriesSeq);
+
+        var studySeq = new DicomSequence(DicomTag.CurrentRequestedProcedureEvidenceSequence);
+        studySeq.Items.Add(studyItem);
+
+        sr.AddOrUpdate(DicomTag.CurrentRequestedProcedureEvidenceSequence, studySeq);
+    }
 }
 
 /// <summary>

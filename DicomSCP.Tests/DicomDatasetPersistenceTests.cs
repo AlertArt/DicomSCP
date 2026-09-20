@@ -296,4 +296,51 @@ public class DicomDatasetPersistenceTests : IDisposable
         var study = Assert.Single(studies);
         Assert.Equal("1.2.3.4.950.1", study.StudyInstanceUid);
     }
+
+    [Fact]
+    public void BuildBatchData_StructuredReportWithEvidence_ExtractsReferences()
+    {
+        var sr = DicomTestData.MakeStructuredReport(sopUid: "1.2.3.4.970.1");
+        DicomTestData.AddEvidence(sr, "1.2.3.4.970.2", "1.2.3.4.970.3", "1.2.3.4.970.4");
+
+        var batch = _persistence.BuildBatchData(
+            new List<(FellowOakDicom.DicomDataset Dataset, string FilePath)> { (sr, "sr.dcm") },
+            DateTime.Now);
+
+        var reference = Assert.Single(batch.SrReferences);
+        Assert.Equal("1.2.3.4.970.1", reference.SrSopInstanceUid);
+        Assert.Equal("1.2.3.4.970.4", reference.ReferencedSopInstanceUid);
+        Assert.Equal("1.2.3.4.970.3", reference.SeriesInstanceUid);
+        Assert.Equal("1.2.3.4.970.2", reference.StudyInstanceUid);
+    }
+
+    [Fact]
+    public async Task SrReferences_LinkReportToReferencedImage()
+    {
+        await DatabaseInitializer.InitializeAsync(_db.ConnectionString);
+
+        var image = DicomTestData.MakeInstance(
+            studyUid: "1.2.3.4.960.1", seriesUid: "1.2.3.4.960.2", sopUid: "1.2.3.4.960.3");
+        var sr = DicomTestData.MakeStructuredReport(
+            studyUid: "1.2.3.4.961.1", seriesUid: "1.2.3.4.961.2", sopUid: "1.2.3.4.961.3",
+            documentTitle: "Chest Report");
+        DicomTestData.AddEvidence(sr, "1.2.3.4.960.1", "1.2.3.4.960.2", "1.2.3.4.960.3");
+
+        await Seed.InsertAsync(_db, _persistence, image, sr);
+
+        var repository = new DicomRepository(_db.Config);
+
+        // 报告 → 引用图像（本地存在，含富化元数据）
+        var references = repository.GetSrReferences("1.2.3.4.961.3");
+        var reference = Assert.Single(references);
+        Assert.Equal("1.2.3.4.960.3", reference.ReferencedSopInstanceUid);
+        Assert.True(reference.PresentLocally);
+        Assert.Equal("CT", reference.Modality);
+
+        // 图像 → 引用它的报告
+        var referencing = repository.GetSrsReferencing("1.2.3.4.960.3");
+        var srInfo = Assert.Single(referencing);
+        Assert.Equal("1.2.3.4.961.3", srInfo.SrSopInstanceUid);
+        Assert.Equal("Chest Report", srInfo.DocumentTitle);
+    }
 }

@@ -101,6 +101,18 @@ public static class DatabaseSchemaSql
                 FOREIGN KEY(SeriesInstanceUid) REFERENCES Series(SeriesInstanceUid)
             )";
 
+    /// <summary>SR 报告引用的 SOP 实例证据链（报告 ↔ 图像关联）。</summary>
+    public const string CreateSrReferencedInstancesTable = @"
+            CREATE TABLE IF NOT EXISTS SrReferencedInstances (
+                SrSopInstanceUid TEXT NOT NULL,
+                ReferencedSopInstanceUid TEXT NOT NULL,
+                ReferencedSopClassUid TEXT,
+                SeriesInstanceUid TEXT,
+                StudyInstanceUid TEXT,
+                CreateTime DATETIME,
+                PRIMARY KEY (SrSopInstanceUid, ReferencedSopInstanceUid)
+            )";
+
     public const string CreateUsersTable = @"
             CREATE TABLE IF NOT EXISTS Users (
                 Username TEXT PRIMARY KEY,
@@ -232,6 +244,8 @@ public static class DatabaseSchemaSql
             CREATE INDEX IF NOT EXISTS IX_Studies_PatientId ON Studies(PatientId);
             CREATE INDEX IF NOT EXISTS IX_Series_StudyInstanceUid ON Series(StudyInstanceUid);
             CREATE INDEX IF NOT EXISTS IX_Instances_SeriesInstanceUid ON Instances(SeriesInstanceUid);
+            CREATE INDEX IF NOT EXISTS IX_SrReferencedInstances_Referenced ON SrReferencedInstances(ReferencedSopInstanceUid);
+            CREATE INDEX IF NOT EXISTS IX_SrReferencedInstances_Sr ON SrReferencedInstances(SrSopInstanceUid);
             CREATE INDEX IF NOT EXISTS IX_Worklist_ScheduledAET ON Worklist(ScheduledAET);
             CREATE INDEX IF NOT EXISTS IX_StorageCommitments_Status ON StorageCommitments(Status);
             CREATE INDEX IF NOT EXISTS IX_UpsWorkItems_ScheduledAeTitle ON UPSWorkItems(ScheduledAeTitle);";

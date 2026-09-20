@@ -1,4 +1,5 @@
 using FellowOakDicom;
+using DicomSCP.Models;
 
 namespace DicomSCP.Services;
 
@@ -37,6 +38,87 @@ public static class SrSupport
             ConceptCodeValue: codeValue,
             ConceptCodingSchemeDesignator: scheme,
             ConceptCodeMeaning: meaning);
+    }
+
+    /// <summary>
+    /// 解析 SR 证据链（引用的图像/对象）：
+    /// 优先 CurrentRequestedProcedureEvidenceSequence，回退顶层 ReferencedSeriesSequence。
+    /// 按被引用 SOP Instance UID 去重。
+    /// </summary>
+    public static IReadOnlyList<SrReference> ExtractReferences(DicomDataset dataset)
+    {
+        var result = new List<SrReference>();
+        var srSopUid = dataset.GetSingleValueOrDefault<string>(DicomTag.SOPInstanceUID, string.Empty);
+        if (string.IsNullOrEmpty(srSopUid))
+        {
+            return result;
+        }
+
+        try
+        {
+            if (dataset.Contains(DicomTag.CurrentRequestedProcedureEvidenceSequence))
+            {
+                foreach (var studyItem in dataset.GetSequence(DicomTag.CurrentRequestedProcedureEvidenceSequence).Items)
+                {
+                    var studyUid = studyItem.GetSingleValueOrDefault<string>(DicomTag.StudyInstanceUID, string.Empty);
+                    if (studyItem.Contains(DicomTag.ReferencedSeriesSequence))
+                    {
+                        CollectSeriesReferences(studyItem.GetSequence(DicomTag.ReferencedSeriesSequence), studyUid, srSopUid, result);
+                    }
+                }
+            }
+            else if (dataset.Contains(DicomTag.ReferencedSeriesSequence))
+            {
+                CollectSeriesReferences(
+                    dataset.GetSequence(DicomTag.ReferencedSeriesSequence),
+                    dataset.GetSingleValueOrDefault<string>(DicomTag.StudyInstanceUID, string.Empty),
+                    srSopUid,
+                    result);
+            }
+        }
+        catch (Exception ex)
+        {
+            DicomLogger.Warning("SR", ex, "解析 SR 证据引用失败 - SR: {SrSop}", srSopUid);
+        }
+
+        return result
+            .GroupBy(r => r.ReferencedSopInstanceUid, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .ToList();
+    }
+
+    private static void CollectSeriesReferences(
+        DicomSequence referencedSeriesSequence,
+        string studyUid,
+        string srSopUid,
+        List<SrReference> result)
+    {
+        foreach (var seriesItem in referencedSeriesSequence.Items)
+        {
+            var seriesUid = seriesItem.GetSingleValueOrDefault<string>(DicomTag.SeriesInstanceUID, string.Empty);
+            if (!seriesItem.Contains(DicomTag.ReferencedSOPSequence))
+            {
+                continue;
+            }
+
+            foreach (var sopItem in seriesItem.GetSequence(DicomTag.ReferencedSOPSequence).Items)
+            {
+                var referencedSopUid = sopItem.GetSingleValueOrDefault<string>(DicomTag.ReferencedSOPInstanceUID, string.Empty);
+                if (string.IsNullOrEmpty(referencedSopUid))
+                {
+                    continue;
+                }
+
+                result.Add(new SrReference
+                {
+                    SrSopInstanceUid = srSopUid,
+                    ReferencedSopInstanceUid = referencedSopUid,
+                    ReferencedSopClassUid = sopItem.GetSingleValueOrDefault<string>(DicomTag.ReferencedSOPClassUID, string.Empty),
+                    SeriesInstanceUid = seriesUid,
+                    StudyInstanceUid = studyUid
+                });
+            }
+        }
     }
 
     private static string Safe(DicomDataset dataset, DicomTag tag)

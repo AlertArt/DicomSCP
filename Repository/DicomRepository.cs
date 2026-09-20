@@ -571,4 +571,72 @@ public class DicomRepository(IConfiguration configuration)
         var whereSql = clauses.Count > 0 ? " AND " + string.Join(" AND ", clauses) : string.Empty;
         return (whereSql, parameters);
     }
+
+    // ── SR 报告 ↔ 图像关联查询 ─────────────────────────────────────────────
+
+    /// <summary>查询某 SR 报告引用的所有实例（含本地元数据富化）。</summary>
+    public List<SrReferenceInfo> GetSrReferences(string srSopInstanceUid, bool throwOnError = false)
+    {
+        try
+        {
+            using var connection = CreateConnection();
+            var sql = @"
+                SELECT
+                    r.ReferencedSopInstanceUid,
+                    r.ReferencedSopClassUid,
+                    COALESCE(se.StudyInstanceUid, r.StudyInstanceUid) AS StudyInstanceUid,
+                    COALESCE(r.SeriesInstanceUid, i.SeriesInstanceUid) AS SeriesInstanceUid,
+                    se.Modality,
+                    se.SeriesDescription,
+                    i.InstanceNumber,
+                    CASE WHEN i.SopInstanceUid IS NULL THEN 0 ELSE 1 END AS PresentLocally
+                FROM SrReferencedInstances r
+                LEFT JOIN Instances i ON i.SopInstanceUid = r.ReferencedSopInstanceUid
+                LEFT JOIN Series se ON se.SeriesInstanceUid = i.SeriesInstanceUid
+                WHERE r.SrSopInstanceUid = @SrSopInstanceUid
+                ORDER BY CAST(i.InstanceNumber AS INTEGER)";
+
+            var result = connection.Query<SrReferenceInfo>(sql, new { SrSopInstanceUid = srSopInstanceUid }).ToList();
+            LogInformation("SR引用查询完成 - SR: {SrSop}, 返回记录数: {Count}", srSopInstanceUid, result.Count);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            LogError(ex, "SR引用查询失败 - SR: {SrSop}", srSopInstanceUid);
+            if (throwOnError) throw;
+            return [];
+        }
+    }
+
+    /// <summary>查询引用了某实例的所有 SR 报告。</summary>
+    public List<SrReferencingInfo> GetSrsReferencing(string sopInstanceUid, bool throwOnError = false)
+    {
+        try
+        {
+            using var connection = CreateConnection();
+            var sql = @"
+                SELECT
+                    r.SrSopInstanceUid,
+                    se.StudyInstanceUid AS StudyInstanceUid,
+                    i.SeriesInstanceUid AS SeriesInstanceUid,
+                    i.DocumentTitle,
+                    i.CompletionFlag,
+                    i.VerificationFlag
+                FROM SrReferencedInstances r
+                LEFT JOIN Instances i ON i.SopInstanceUid = r.SrSopInstanceUid
+                LEFT JOIN Series se ON se.SeriesInstanceUid = i.SeriesInstanceUid
+                WHERE r.ReferencedSopInstanceUid = @SopInstanceUid
+                ORDER BY i.CreateTime DESC";
+
+            var result = connection.Query<SrReferencingInfo>(sql, new { SopInstanceUid = sopInstanceUid }).ToList();
+            LogInformation("SR反查查询完成 - 实例: {Sop}, 返回记录数: {Count}", sopInstanceUid, result.Count);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            LogError(ex, "SR反查查询失败 - 实例: {Sop}", sopInstanceUid);
+            if (throwOnError) throw;
+            return [];
+        }
+    }
 }
