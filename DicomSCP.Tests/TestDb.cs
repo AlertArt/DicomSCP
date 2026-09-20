@@ -87,7 +87,10 @@ public static class DicomTestData
         string verificationFlag = "UNVERIFIED",
         string conceptCodeValue = "18748-4",
         string conceptScheme = "LN",
-        string conceptMeaning = "Diagnostic imaging study")
+        string conceptMeaning = "Diagnostic imaging study",
+        string verificationDateTime = "20240101120000",
+        string contentDate = "20240101",
+        string contentTime = "120000")
     {
         var concept = new DicomDataset();
         concept.AddOrUpdate(DicomTag.CodeValue, conceptCodeValue);
@@ -110,6 +113,9 @@ public static class DicomTestData
         ds.AddOrUpdate(DicomTag.DocumentTitle, documentTitle);
         ds.AddOrUpdate(DicomTag.CompletionFlag, completionFlag);
         ds.AddOrUpdate(DicomTag.VerificationFlag, verificationFlag);
+        ds.AddOrUpdate(DicomTag.VerificationDateTime, verificationDateTime);
+        ds.AddOrUpdate(DicomTag.ContentDate, contentDate);
+        ds.AddOrUpdate(DicomTag.ContentTime, contentTime);
         ds.Add(DicomTag.ConceptNameCodeSequence, conceptSeq);
         return ds;
     }

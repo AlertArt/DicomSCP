@@ -292,6 +292,9 @@ public partial class QRSCP
         AddMatch(DicomTag.DocumentTitle);
         AddMatch(DicomTag.CompletionFlag);
         AddMatch(DicomTag.VerificationFlag);
+        AddMatch(DicomTag.CodeValue);
+        AddMatch(DicomTag.CodingSchemeDesignator);
+        AddMatch(DicomTag.CodeMeaning);
 
         // 使 Task.Run 来异步执行数据库查询
         var instances = await Task.Run(() => _repository.GetInstancesBySeriesUid(studyInstanceUid, seriesInstanceUid, matches));
@@ -326,6 +329,18 @@ public partial class QRSCP
                     dataset.Add(DicomTag.CompletionFlag, instance.CompletionFlag);
                 if (!string.IsNullOrEmpty(instance.VerificationFlag))
                     dataset.Add(DicomTag.VerificationFlag, instance.VerificationFlag);
+                if (!string.IsNullOrEmpty(instance.ConceptCodeValue))
+                    dataset.Add(DicomTag.CodeValue, instance.ConceptCodeValue);
+                if (!string.IsNullOrEmpty(instance.ConceptCodingSchemeDesignator))
+                    dataset.Add(DicomTag.CodingSchemeDesignator, instance.ConceptCodingSchemeDesignator);
+                if (!string.IsNullOrEmpty(instance.ConceptCodeMeaning))
+                    dataset.Add(DicomTag.CodeMeaning, instance.ConceptCodeMeaning);
+                if (!string.IsNullOrEmpty(instance.VerificationDateTime))
+                    dataset.Add(DicomTag.VerificationDateTime, instance.VerificationDateTime);
+                if (!string.IsNullOrEmpty(instance.ContentDate))
+                    dataset.Add(DicomTag.ContentDate, instance.ContentDate);
+                if (!string.IsNullOrEmpty(instance.ContentTime))
+                    dataset.Add(DicomTag.ContentTime, instance.ContentTime);
 
                 response.Dataset = dataset;
                 responses.Add(response);

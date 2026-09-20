@@ -239,7 +239,10 @@ public class DicomDatasetPersistenceTests : IDisposable
             verificationFlag: "VERIFIED",
             conceptCodeValue: "18748-4",
             conceptScheme: "LN",
-            conceptMeaning: "Diagnostic imaging study");
+            conceptMeaning: "Diagnostic imaging study",
+            verificationDateTime: "20240101120000",
+            contentDate: "20240101",
+            contentTime: "120000");
 
         var batch = _persistence.BuildBatchData(
             new List<(FellowOakDicom.DicomDataset Dataset, string FilePath)> { (ds, "sr.dcm") },
@@ -252,6 +255,9 @@ public class DicomDatasetPersistenceTests : IDisposable
         Assert.Equal("18748-4", inst.ConceptCodeValue);
         Assert.Equal("LN", inst.ConceptCodingSchemeDesignator);
         Assert.Equal("Diagnostic imaging study", inst.ConceptCodeMeaning);
+        Assert.Equal("20240101120000", inst.VerificationDateTime);
+        Assert.Equal("20240101", inst.ContentDate);
+        Assert.Equal("120000", inst.ContentTime);
     }
 
     [Fact]
@@ -298,8 +304,36 @@ public class DicomDatasetPersistenceTests : IDisposable
     }
 
     [Fact]
-    public void BuildBatchData_StructuredReportWithEvidence_ExtractsReferences()
+    public async Task QidoQuery_ByConceptCode_FiltersSrReports()
     {
+        await DatabaseInitializer.InitializeAsync(_db.ConnectionString);
+
+        await Seed.InsertAsync(_db, _persistence,
+            DicomTestData.MakeStructuredReport(
+                studyUid: "1.2.3.4.980.1", seriesUid: "1.2.3.4.980.2", sopUid: "1.2.3.4.980.3",
+                conceptCodeValue: "18748-4", conceptScheme: "LN", conceptMeaning: "Diagnostic imaging study"),
+            DicomTestData.MakeInstance(
+                studyUid: "1.2.3.4.981.1", seriesUid: "1.2.3.4.981.2", sopUid: "1.2.3.4.981.3"));
+
+        var repository = new DicomRepository(_db.Config);
+        var matches = new Dictionary<DicomTag, IReadOnlyList<string>>
+        {
+            [DicomTag.CodeValue] = new[] { "18748-4" }
+        };
+
+        // 实例级：按概念码过滤命中 SR
+        var instances = repository.QidoQueryInstances("1.2.3.4.980.1", "1.2.3.4.980.2", matches, false, null, null);
+        var inst = Assert.Single(instances);
+        Assert.Equal("18748-4", inst.ConceptCodeValue);
+        Assert.Equal("LN", inst.ConceptCodingSchemeDesignator);
+
+        // 研究级：同样按概念码过滤
+        var studies = repository.QidoQueryStudies(matches, false, null, null);
+        Assert.Single(studies);
+    }
+
+    [Fact]
+    public void BuildBatchData_StructuredReportWithEvidence_ExtractsReferences()    {
         var sr = DicomTestData.MakeStructuredReport(sopUid: "1.2.3.4.970.1");
         DicomTestData.AddEvidence(sr, "1.2.3.4.970.2", "1.2.3.4.970.3", "1.2.3.4.970.4");
 

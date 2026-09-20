@@ -113,6 +113,12 @@ public static class DicomWebHelpers
             ds.Add(DicomTag.CompletionFlag, instance.CompletionFlag);
         if (!string.IsNullOrEmpty(instance.VerificationFlag))
             ds.Add(DicomTag.VerificationFlag, instance.VerificationFlag);
+        if (!string.IsNullOrEmpty(instance.VerificationDateTime))
+            ds.Add(DicomTag.VerificationDateTime, instance.VerificationDateTime);
+        if (!string.IsNullOrEmpty(instance.ContentDate))
+            ds.Add(DicomTag.ContentDate, instance.ContentDate);
+        if (!string.IsNullOrEmpty(instance.ContentTime))
+            ds.Add(DicomTag.ContentTime, instance.ContentTime);
         if (!string.IsNullOrEmpty(instance.ConceptCodeValue) ||
             !string.IsNullOrEmpty(instance.ConceptCodeMeaning))
         {

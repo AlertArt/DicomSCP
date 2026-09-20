@@ -73,6 +73,9 @@ public static class DatabaseSchemaMigrator
             ("ConceptCodeValue", "TEXT"),
             ("ConceptCodingSchemeDesignator", "TEXT"),
             ("ConceptCodeMeaning", "TEXT"),
+            ("VerificationDateTime", "TEXT"),
+            ("ContentDate", "TEXT"),
+            ("ContentTime", "TEXT"),
         };
 
         foreach (var (name, type) in srColumns)

@@ -74,6 +74,9 @@ public class Instance
     public string? ConceptCodeValue { get; set; }
     public string? ConceptCodingSchemeDesignator { get; set; }
     public string? ConceptCodeMeaning { get; set; }
+    public string? VerificationDateTime { get; set; }
+    public string? ContentDate { get; set; }
+    public string? ContentTime { get; set; }
     public DateTime CreateTime { get; set; }
 }
 

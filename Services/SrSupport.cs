@@ -37,7 +37,10 @@ public static class SrSupport
             VerificationFlag: Safe(dataset, DicomTag.VerificationFlag),
             ConceptCodeValue: codeValue,
             ConceptCodingSchemeDesignator: scheme,
-            ConceptCodeMeaning: meaning);
+            ConceptCodeMeaning: meaning,
+            VerificationDateTime: Safe(dataset, DicomTag.VerificationDateTime),
+            ContentDate: Safe(dataset, DicomTag.ContentDate),
+            ContentTime: Safe(dataset, DicomTag.ContentTime));
     }
 
     /// <summary>
@@ -170,4 +173,7 @@ public sealed record SrFields(
     string VerificationFlag,
     string ConceptCodeValue,
     string ConceptCodingSchemeDesignator,
-    string ConceptCodeMeaning);
+    string ConceptCodeMeaning,
+    string VerificationDateTime,
+    string ContentDate,
+    string ContentTime);

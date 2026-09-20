@@ -44,7 +44,10 @@ public class SrSupportTests
             verificationFlag: "VERIFIED",
             conceptCodeValue: "12345",
             conceptScheme: "DCM",
-            conceptMeaning: "Some Concept");
+            conceptMeaning: "Some Concept",
+            verificationDateTime: "20240202103000",
+            contentDate: "20240202",
+            contentTime: "103000");
 
         var fields = SrSupport.Extract(dataset);
 
@@ -54,6 +57,9 @@ public class SrSupportTests
         Assert.Equal("12345", fields.ConceptCodeValue);
         Assert.Equal("DCM", fields.ConceptCodingSchemeDesignator);
         Assert.Equal("Some Concept", fields.ConceptCodeMeaning);
+        Assert.Equal("20240202103000", fields.VerificationDateTime);
+        Assert.Equal("20240202", fields.ContentDate);
+        Assert.Equal("103000", fields.ContentTime);
     }
 
     [Fact]
@@ -70,6 +76,9 @@ public class SrSupportTests
         Assert.Equal(string.Empty, fields.ConceptCodeValue);
         Assert.Equal(string.Empty, fields.ConceptCodingSchemeDesignator);
         Assert.Equal(string.Empty, fields.ConceptCodeMeaning);
+        Assert.Equal(string.Empty, fields.VerificationDateTime);
+        Assert.Equal(string.Empty, fields.ContentDate);
+        Assert.Equal(string.Empty, fields.ContentTime);
     }
 
     [Fact]

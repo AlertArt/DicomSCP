@@ -104,6 +104,7 @@ public sealed class DicomDatasetPersistence : IDisposable
                 ImageType, WindowCenter, WindowWidth,
                 DocumentTitle, CompletionFlag, VerificationFlag,
                 ConceptCodeValue, ConceptCodingSchemeDesignator, ConceptCodeMeaning,
+                VerificationDateTime, ContentDate, ContentTime,
                 CreateTime
             ) VALUES (
                 @SopInstanceUid, @SeriesInstanceUid, @SopClassUid, @InstanceNumber, @FilePath,
@@ -113,6 +114,7 @@ public sealed class DicomDatasetPersistence : IDisposable
                 @ImageType, @WindowCenter, @WindowWidth,
                 @DocumentTitle, @CompletionFlag, @VerificationFlag,
                 @ConceptCodeValue, @ConceptCodingSchemeDesignator, @ConceptCodeMeaning,
+                @VerificationDateTime, @ContentDate, @ContentTime,
                 @CreateTime
             )";
 
@@ -546,6 +548,9 @@ public sealed class DicomDatasetPersistence : IDisposable
             ConceptCodeValue = sr?.ConceptCodeValue,
             ConceptCodingSchemeDesignator = sr?.ConceptCodingSchemeDesignator,
             ConceptCodeMeaning = sr?.ConceptCodeMeaning,
+            VerificationDateTime = sr?.VerificationDateTime,
+            ContentDate = sr?.ContentDate,
+            ContentTime = sr?.ContentTime,
             CreateTime = now
         });
 

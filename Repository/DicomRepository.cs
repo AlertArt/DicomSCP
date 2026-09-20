@@ -468,7 +468,10 @@ public class DicomRepository(IConfiguration configuration)
         // SR 报告级过滤（研究查询已 JOIN Instances i）
         [DicomTag.DocumentTitle] = "i.DocumentTitle",
         [DicomTag.CompletionFlag] = "i.CompletionFlag",
-        [DicomTag.VerificationFlag] = "i.VerificationFlag"
+        [DicomTag.VerificationFlag] = "i.VerificationFlag",
+        [DicomTag.CodeValue] = "i.ConceptCodeValue",
+        [DicomTag.CodingSchemeDesignator] = "i.ConceptCodingSchemeDesignator",
+        [DicomTag.CodeMeaning] = "i.ConceptCodeMeaning"
     };
 
     private static readonly Dictionary<DicomTag, string> QidoSeriesColumns = new()
@@ -506,7 +509,10 @@ public class DicomRepository(IConfiguration configuration)
         // SR 报告级过滤键
         [DicomTag.DocumentTitle] = "i.DocumentTitle",
         [DicomTag.CompletionFlag] = "i.CompletionFlag",
-        [DicomTag.VerificationFlag] = "i.VerificationFlag"
+        [DicomTag.VerificationFlag] = "i.VerificationFlag",
+        [DicomTag.CodeValue] = "i.ConceptCodeValue",
+        [DicomTag.CodingSchemeDesignator] = "i.ConceptCodingSchemeDesignator",
+        [DicomTag.CodeMeaning] = "i.ConceptCodeMeaning"
     };
 
     /// <summary>将 QIDO 请求中的 DICOM 标签映射到数据库列并构造 SQL 过滤条件。</summary>

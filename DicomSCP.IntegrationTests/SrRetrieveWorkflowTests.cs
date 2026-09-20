@@ -80,6 +80,10 @@ public class SrRetrieveWorkflowTests
                 "SELECT CompletionFlag FROM Instances WHERE SopInstanceUid = @Sop", new { Sop = sop.UID }));
             Assert.Equal("UNVERIFIED", await _fx.QueryScalarAsync<string>(
                 "SELECT VerificationFlag FROM Instances WHERE SopInstanceUid = @Sop", new { Sop = sop.UID }));
+            Assert.Equal("20240101120000", await _fx.QueryScalarAsync<string>(
+                "SELECT VerificationDateTime FROM Instances WHERE SopInstanceUid = @Sop", new { Sop = sop.UID }));
+            Assert.Equal("18748-4", await _fx.QueryScalarAsync<string>(
+                "SELECT ConceptCodeValue FROM Instances WHERE SopInstanceUid = @Sop", new { Sop = sop.UID }));
 
             var encodedTitle = Uri.EscapeDataString(title);
 
@@ -102,6 +106,17 @@ public class SrRetrieveWorkflowTests
             {
                 Assert.Equal(HttpStatusCode.OK, qidoStudy.StatusCode);
                 Assert.Contains(study.UID, await qidoStudy.Content.ReadAsStringAsync());
+            }
+
+            // QIDO-RS 实例级按概念码 CodeValue 过滤命中（00080100 = CodeValue）
+            using (var qidoCode = await GetAsync(
+                $"/dicomweb/studies/{study.UID}/series/{series.UID}/instances?CodeValue=18748-4",
+                "application/dicom+json"))
+            {
+                Assert.Equal(HttpStatusCode.OK, qidoCode.StatusCode);
+                var body = await qidoCode.Content.ReadAsStringAsync();
+                Assert.Contains(sop.UID, body);
+                Assert.Contains("00080100", body);
             }
 
             // DIMSE Image 级 C-FIND 按 DocumentTitle 过滤命中
@@ -358,6 +373,9 @@ public class SrRetrieveWorkflowTests
         result.AddOrUpdate(DicomTag.DocumentTitle, "E2E Structured Report");
         result.AddOrUpdate(DicomTag.CompletionFlag, "COMPLETE");
         result.AddOrUpdate(DicomTag.VerificationFlag, "UNVERIFIED");
+        result.AddOrUpdate(DicomTag.VerificationDateTime, "20240101120000");
+        result.AddOrUpdate(DicomTag.ContentDate, "20240101");
+        result.AddOrUpdate(DicomTag.ContentTime, "120000");
         result.Add(DicomTag.ConceptNameCodeSequence, rootConceptSeq);
         result.Add(DicomTag.ContentSequence, contentSeq);
 

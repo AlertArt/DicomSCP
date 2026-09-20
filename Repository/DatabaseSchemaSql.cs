@@ -97,6 +97,9 @@ public static class DatabaseSchemaSql
                 ConceptCodeValue TEXT,
                 ConceptCodingSchemeDesignator TEXT,
                 ConceptCodeMeaning TEXT,
+                VerificationDateTime TEXT,
+                ContentDate TEXT,
+                ContentTime TEXT,
                 CreateTime DATETIME,
                 FOREIGN KEY(SeriesInstanceUid) REFERENCES Series(SeriesInstanceUid)
             )";
