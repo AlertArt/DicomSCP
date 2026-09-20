@@ -1,0 +1,16 @@
+DicomSCP 本地与 GitHub 版本不一致修复终局（2026-08）
+
+【一句结论】
+本地 master 已与 GitHub origin/master 逐字节一致：SHA = 1237646fc3（push 成功，identical=True）。
+
+【根因】
+分叉点 6d61d63 之后，远程被合并入 440 个不涉及 Services/QRSCP* 的他人提交（含 merge 06a2a5e），本地则新增 1 个 QRSCP 拆分提交（247ac3b，上游 rebase 后）；两者改动区域零交集。
+
+【收敛动作】
+1. rebase 本地拆分提交到远程之上；
+2. merge origin/master（ort 合并，无冲突）；
+3. push origin master → master（06a2a5e..1237646）。
+
+【验证】
+dotnet test = 112/112 通过（Release，含原有 108 + 远程新增 4），0 失败；工作区 clean。
+local = remote = 1237646fc3

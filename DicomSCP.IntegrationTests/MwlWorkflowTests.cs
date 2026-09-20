@@ -32,7 +32,7 @@ public class MwlWorkflowTests
             ["Age"] = 40,
             ["AccessionNumber"] = "ACC-E2E-MWL-001",
             ["Modality"] = "CT",
-            ["ScheduledDateTime"] = "2026-09-17T10:30",
+            ["ScheduledDateTime"] = DateTime.Now.ToString("yyyy-MM-ddTHH:mm"),
             ["ScheduledAET"] = "CTSCANNER",
             ["Status"] = "SCHEDULED",
             ["StudyDescription"] = "E2E MWL"
