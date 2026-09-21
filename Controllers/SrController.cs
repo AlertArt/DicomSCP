@@ -72,6 +72,45 @@ public class SrController : ControllerBase
         }
     }
 
+    /// <summary>读取该 SR 报告的内容树（报告头 + 内容项），供查看器呈现。</summary>
+    [HttpGet("{sopInstanceUid}/content")]
+    public async Task<IActionResult> GetContent(string sopInstanceUid)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(sopInstanceUid))
+            {
+                return BadRequest("sopInstanceUid is required");
+            }
+
+            var dbInstance = await _repository.GetInstanceAsync(sopInstanceUid);
+            if (dbInstance == null)
+            {
+                return NotFound("Instance not found");
+            }
+
+            if (!SrSupport.IsStructuredReport(dbInstance.SopClassUid))
+            {
+                return BadRequest("Instance is not a structured report");
+            }
+
+            var filePath = Path.Combine(_settings.StoragePath ?? string.Empty, dbInstance.FilePath);
+            if (!System.IO.File.Exists(filePath))
+            {
+                return NotFound("DICOM file not found");
+            }
+
+            var dicomFile = await DicomFile.OpenAsync(filePath);
+            var content = SrSupport.ExtractDocumentContent(dicomFile.Dataset);
+            return Ok(content);
+        }
+        catch (Exception ex)
+        {
+            DicomLogger.Error("Sr", ex, "读取 SR 内容失败 - SR: {Sop}", sopInstanceUid);
+            return StatusCode(500, "读取 SR 内容失败");
+        }
+    }
+
     /// <summary>从 REST 输入生成 Basic Text SR，归档并立即入库，返回生成的 UID。</summary>
     [HttpPost("generate")]
     public async Task<IActionResult> Generate([FromBody] SrGenerationRequest request)

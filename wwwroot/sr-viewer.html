@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>结构化报告查看器</title>
+    <style>
+        body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f6f8; color: #1f2933; }
+        header { padding: 16px 24px; background: #1f2933; color: #fff; }
+        header h1 { margin: 0; font-size: 18px; }
+        header .meta { margin-top: 6px; font-size: 13px; color: #cbd2d9; }
+        main { padding: 20px 24px; max-width: 960px; }
+        .node { border-left: 3px solid #9aa5b1; margin: 8px 0; padding: 6px 0 6px 14px; }
+        .node.container { border-left-color: #3e7cb1; }
+        .node .label { font-size: 13px; color: #52606d; }
+        .node .concept { font-weight: 600; }
+        .node .value { margin-top: 4px; white-space: pre-wrap; }
+        .tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 8px; background: #e4e7eb; color: #52606d; margin-right: 6px; }
+        .error { color: #a61b1b; }
+        .empty { color: #7b8794; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>结构化报告 (SR)</h1>
+        <div class="meta" id="docMeta">加载中…</div>
+    </header>
+    <main id="content"></main>
+
+    <script>
+        function getParam(name) {
+            return new URLSearchParams(window.location.search).get(name);
+        }
+
+        function conceptText(concept) {
+            if (!concept) return "";
+            var parts = [];
+            if (concept.codeMeaning) parts.push(concept.codeMeaning);
+            if (concept.codeValue) parts.push("(" + concept.codeValue + ")");
+            return parts.join(" ");
+        }
+
+        function nodeValue(node) {
+            switch ((node.valueType || "").toUpperCase()) {
+                case "TEXT": return node.textValue;
+                case "CODE": return conceptText(node.code);
+                case "NUM": return [node.numericValue, node.units].filter(Boolean).join(" ");
+                case "PNAME": return node.personName;
+                case "DATETIME": return node.dateTimeValue;
+                case "DATE": return node.dateValue;
+                case "TIME": return node.timeValue;
+                case "UIDREF": return node.uidValue;
+                default:
+                    if (node.referencedSopInstanceUids && node.referencedSopInstanceUids.length) {
+                        return "引用实例: " + node.referencedSopInstanceUids.join(", ");
+                    }
+                    return "";
+            }
+        }
+
+        function renderNode(node) {
+            var div = document.createElement("div");
+            div.className = "node " + ((node.valueType || "").toUpperCase() === "CONTAINER" ? "container" : "");
+
+            var label = document.createElement("div");
+            label.className = "label";
+            var tag = document.createElement("span");
+            tag.className = "tag";
+            tag.textContent = node.valueType || "UNKNOWN";
+            label.appendChild(tag);
+            var concept = document.createElement("span");
+            concept.className = "concept";
+            concept.textContent = conceptText(node.conceptName);
+            label.appendChild(concept);
+            div.appendChild(label);
+
+            var value = nodeValue(node);
+            if (value) {
+                var valueDiv = document.createElement("div");
+                valueDiv.className = "value";
+                valueDiv.textContent = value;
+                div.appendChild(valueDiv);
+            }
+
+            (node.children || []).forEach(function (child) {
+                div.appendChild(renderNode(child));
+            });
+
+            return div;
+        }
+
+        async function load() {
+            var content = document.getElementById("content");
+            var meta = document.getElementById("docMeta");
+            var sop = getParam("sop");
+            if (!sop) {
+                content.innerHTML = '<p class="error">缺少查询参数 sop（SOP Instance UID）。</p>';
+                meta.textContent = "";
+                return;
+            }
+
+            try {
+                var resp = await fetch("/api/Sr/" + encodeURIComponent(sop) + "/content", {
+                    headers: { "Accept": "application/json" }
+                });
+                if (!resp.ok) {
+                    content.innerHTML = '<p class="error">读取失败：HTTP ' + resp.status + "</p>";
+                    meta.textContent = "";
+                    return;
+                }
+                var doc = await resp.json();
+                meta.textContent = [
+                    doc.documentTitle ? "标题: " + doc.documentTitle : null,
+                    doc.completionFlag ? "完成: " + doc.completionFlag : null,
+                    doc.verificationFlag ? "审核: " + doc.verificationFlag : null,
+                    "SOP: " + doc.sopInstanceUid
+                ].filter(Boolean).join("    ");
+
+                content.innerHTML = "";
+                if (doc.root) {
+                    content.appendChild(renderNode(doc.root));
+                } else {
+                    content.innerHTML = '<p class="empty">报告没有内容项。</p>';
+                }
+            } catch (e) {
+                content.innerHTML = '<p class="error">请求异常：' + e + "</p>";
+            }
+        }
+
+        load();
+    </script>
+</body>
+</html>

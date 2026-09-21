@@ -101,3 +101,44 @@ public class SrGenerationResult
     public string SeriesInstanceUid { get; set; } = string.Empty;
     public string FilePath { get; set; } = string.Empty;
 }
+
+/// <summary>编码概念（CodeValue / CodingSchemeDesignator / CodeMeaning）。</summary>
+public class SrCodedConcept
+{
+    public string? CodeValue { get; set; }
+    public string? CodingSchemeDesignator { get; set; }
+    public string? CodeMeaning { get; set; }
+}
+
+/// <summary>SR 内容树节点（对应 SR Document Content 中的一个内容项）。</summary>
+public class SrContentNode
+{
+    public string ValueType { get; set; } = string.Empty;
+    public string? RelationshipType { get; set; }
+    public SrCodedConcept? ConceptName { get; set; }
+    public string? TextValue { get; set; }
+    /// <summary>CODE 类型的编码值。</summary>
+    public SrCodedConcept? Code { get; set; }
+    /// <summary>NUM 类型的测量值。</summary>
+    public string? NumericValue { get; set; }
+    public string? Units { get; set; }
+    public string? PersonName { get; set; }
+    public string? DateTimeValue { get; set; }
+    public string? DateValue { get; set; }
+    public string? TimeValue { get; set; }
+    public string? UidValue { get; set; }
+    /// <summary>IMAGE/SCOORD 等引用型内容项引用的 SOP 实例。</summary>
+    public List<string>? ReferencedSopInstanceUids { get; set; }
+    public List<SrContentNode> Children { get; set; } = new();
+}
+
+/// <summary>SR 文档级内容（报告头 + 内容树根）。</summary>
+public class SrDocumentContent
+{
+    public string SopInstanceUid { get; set; } = string.Empty;
+    public string? DocumentTitle { get; set; }
+    public string? CompletionFlag { get; set; }
+    public string? VerificationFlag { get; set; }
+    public SrCodedConcept? ConceptName { get; set; }
+    public SrContentNode? Root { get; set; }
+}

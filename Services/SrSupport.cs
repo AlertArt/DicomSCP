@@ -137,6 +137,132 @@ public static class SrSupport
         }
     }
 
+    /// <summary>解析 SR 文档级内容（报告头 + 内容树根）。</summary>
+    public static SrDocumentContent ExtractDocumentContent(DicomDataset dataset)
+    {
+        return new SrDocumentContent
+        {
+            SopInstanceUid = dataset.GetSingleValueOrDefault<string>(DicomTag.SOPInstanceUID, string.Empty),
+            DocumentTitle = dataset.GetSingleValueOrDefault<string>(DicomTag.DocumentTitle, string.Empty),
+            CompletionFlag = dataset.GetSingleValueOrDefault<string>(DicomTag.CompletionFlag, string.Empty),
+            VerificationFlag = dataset.GetSingleValueOrDefault<string>(DicomTag.VerificationFlag, string.Empty),
+            ConceptName = ReadCode(dataset, DicomTag.ConceptNameCodeSequence),
+            Root = ParseContentNode(dataset, isRoot: true)
+        };
+    }
+
+    private static SrContentNode ParseContentNode(DicomDataset item, bool isRoot)
+    {
+        var node = new SrContentNode
+        {
+            ValueType = item.GetSingleValueOrDefault<string>(DicomTag.ValueType, string.Empty),
+            RelationshipType = isRoot ? null : item.GetSingleValueOrDefault<string>(DicomTag.RelationshipType, string.Empty),
+            ConceptName = ReadCode(item, DicomTag.ConceptNameCodeSequence)
+        };
+
+        switch (node.ValueType.ToUpperInvariant())
+        {
+            case "TEXT":
+                node.TextValue = item.GetSingleValueOrDefault<string>(DicomTag.TextValue, string.Empty);
+                break;
+            case "CODE":
+                node.Code = ReadCode(item, DicomTag.ConceptCodeSequence);
+                break;
+            case "NUM":
+                node.NumericValue = item.GetSingleValueOrDefault<string>(DicomTag.NumericValue, string.Empty);
+                node.Units = ReadCode(item, DicomTag.MeasurementUnitsCodeSequence)?.CodeMeaning;
+                break;
+            case "PNAME":
+                node.PersonName = item.GetSingleValueOrDefault<string>(DicomTag.PersonName, string.Empty);
+                break;
+            case "DATETIME":
+                node.DateTimeValue = item.GetSingleValueOrDefault<string>(DicomTag.DateTime, string.Empty);
+                break;
+            case "DATE":
+                node.DateValue = item.GetSingleValueOrDefault<string>(DicomTag.Date, string.Empty);
+                break;
+            case "TIME":
+                node.TimeValue = item.GetSingleValueOrDefault<string>(DicomTag.Time, string.Empty);
+                break;
+            case "UIDREF":
+                node.UidValue = item.GetSingleValueOrDefault<string>(DicomTag.UID, string.Empty);
+                break;
+            case "IMAGE":
+            case "SCOORD":
+            case "SCOORD3D":
+            case "WAVEFORM":
+            case "COMPOSITE":
+                node.ReferencedSopInstanceUids = ReadReferencedSopUids(item);
+                break;
+        }
+
+        if (item.Contains(DicomTag.ContentSequence))
+        {
+            foreach (var child in item.GetSequence(DicomTag.ContentSequence).Items)
+            {
+                node.Children.Add(ParseContentNode(child, isRoot: false));
+            }
+        }
+
+        return node;
+    }
+
+    private static List<string> ReadReferencedSopUids(DicomDataset item)
+    {
+        var uids = new List<string>();
+        try
+        {
+            if (!item.Contains(DicomTag.ReferencedSOPSequence))
+            {
+                return uids;
+            }
+
+            foreach (var sopItem in item.GetSequence(DicomTag.ReferencedSOPSequence).Items)
+            {
+                var uid = sopItem.GetSingleValueOrDefault<string>(DicomTag.ReferencedSOPInstanceUID, string.Empty);
+                if (!string.IsNullOrEmpty(uid))
+                {
+                    uids.Add(uid);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            DicomLogger.Warning("SR", ex, "解析引用型内容项失败");
+        }
+
+        return uids;
+    }
+
+    private static SrCodedConcept? ReadCode(DicomDataset dataset, DicomTag sequenceTag)
+    {
+        try
+        {
+            if (!dataset.Contains(sequenceTag))
+            {
+                return null;
+            }
+
+            var item = dataset.GetSequence(sequenceTag).Items.FirstOrDefault();
+            if (item == null)
+            {
+                return null;
+            }
+
+            return new SrCodedConcept
+            {
+                CodeValue = item.GetSingleValueOrDefault<string>(DicomTag.CodeValue, string.Empty),
+                CodingSchemeDesignator = item.GetSingleValueOrDefault<string>(DicomTag.CodingSchemeDesignator, string.Empty),
+                CodeMeaning = item.GetSingleValueOrDefault<string>(DicomTag.CodeMeaning, string.Empty)
+            };
+        }
+        catch (Exception ex)
+        {
+            DicomLogger.Warning("SR", ex, "解析编码序列失败 - Tag: {Tag}", sequenceTag);
+            return null;
+        }
+    }
+
     /// <summary>取 ConceptNameCodeSequence 首项的 (CodeValue, CodingSchemeDesignator, CodeMeaning)。</summary>
     private static (string CodeValue, string Scheme, string Meaning) ExtractConceptName(DicomDataset dataset)
     {

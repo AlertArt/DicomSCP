@@ -125,4 +125,34 @@ public class SrGeneratorTests
         Assert.Throws<ArgumentException>(() =>
             SrGenerator.BuildBasicTextSr(new SrGenerationRequest { ContentText = "  " }, FixedNow));
     }
+
+    [Fact]
+    public void ExtractDocumentContent_FromGeneratedSr_ReturnsTree()
+    {
+        var ds = SrGenerator.BuildBasicTextSr(new SrGenerationRequest
+        {
+            DocumentTitle = "Report",
+            ContentText = "Findings body",
+            CompletionFlag = "COMPLETE",
+            VerificationFlag = "UNVERIFIED"
+        }, FixedNow);
+
+        var document = SrSupport.ExtractDocumentContent(ds);
+
+        Assert.Equal("Report", document.DocumentTitle);
+        Assert.Equal("COMPLETE", document.CompletionFlag);
+        Assert.Equal("UNVERIFIED", document.VerificationFlag);
+        Assert.NotNull(document.ConceptName);
+
+        Assert.NotNull(document.Root);
+        Assert.Equal("CONTAINER", document.Root!.ValueType);
+        Assert.Null(document.Root.RelationshipType);
+
+        var text = Assert.Single(document.Root.Children);
+        Assert.Equal("TEXT", text.ValueType);
+        Assert.Equal("CONTAINS", text.RelationshipType);
+        Assert.Equal("Findings body", text.TextValue);
+        Assert.NotNull(text.ConceptName);
+        Assert.Empty(text.Children);
+    }
 }
