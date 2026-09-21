@@ -701,6 +701,21 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
                     missingTags.Add("Pixel Data (empty or missing)");
                 }
             }
+            // 检查结构化报告(SR)必需属性，拒绝畸形 SR
+            else if (SrSupport.IsStructuredReport(dataset.GetSingleValueOrDefault<string>(DicomTag.SOPClassUID, string.Empty)))
+            {
+                var srRequiredTags = new[]
+                {
+                    (DicomTag.ValueType, "Value Type"),
+                    (DicomTag.ConceptNameCodeSequence, "Concept Name Code Sequence"),
+                    (DicomTag.CompletionFlag, "Completion Flag"),
+                    (DicomTag.VerificationFlag, "Verification Flag")
+                };
+
+                missingTags.AddRange(srRequiredTags
+                    .Where(t => !dataset.Contains(t.Item1))
+                    .Select(t => $"SR {t.Item2}"));
+            }
 
             if (missingTags.Any())
             {

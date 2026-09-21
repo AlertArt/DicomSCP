@@ -288,6 +288,34 @@ public class SrRetrieveWorkflowTests
         }
     }
 
+    [Fact]
+    public async Task SrMalformedReport_IsRejectedWithInvalidAttributeValue()
+    {
+        var (study, series, sop) = NewUids();
+        var filePath = Path.Combine(Path.GetTempPath(), "srbad_" + Guid.NewGuid().ToString("N") + ".dcm");
+
+        // 缺少 SR 必需的 CompletionFlag，属畸形报告
+        var ds = CreateMinimalSr(study, series, sop);
+        ds.Remove(DicomTag.CompletionFlag);
+        new DicomFile(ds).Save(filePath);
+
+        try
+        {
+            DicomStatus? status = null;
+            var store = _fx.CreateClient(E2EFixture.StorePort, "STORESCP");
+            var request = new DicomCStoreRequest(filePath);
+            request.OnResponseReceived += (_, r) => status = r.Status;
+            await store.AddRequestAsync(request);
+            await store.SendAsync();
+
+            Assert.Equal(DicomStatus.InvalidAttributeValue, status);
+        }
+        finally
+        {
+            DeleteTemp(filePath);
+        }
+    }
+
     private async Task<(string Sop, string Study, string Series)> StoreMinimalImageAsync()
     {
         var (imagePath, imageSop, imageStudy, imageSeries) = TestData.CreateMinimalImage();
@@ -427,20 +455,25 @@ public class SrRetrieveWorkflowTests
     private static DicomDataset CreateMinimalSr(DicomUID study, DicomUID series, DicomUID sop,
         (string Study, string Series, string Sop)? evidence = null)
     {
-        var concept = new DicomDataset();
-        concept.AddOrUpdate(DicomTag.CodeValue, "121311");
-        concept.AddOrUpdate(DicomTag.CodingSchemeDesignator, "DCM");
-        concept.AddOrUpdate(DicomTag.CodeMeaning, "Structured Report");
-        var conceptSeq = new DicomSequence(DicomTag.ConceptNameCodeSequence);
-        conceptSeq.Items.Add(concept);
+        // 标准 Basic Text SR：顶层数据集即根 CONTAINER，ContentSequence 承载子内容项
+        var textConceptSeq = new DicomSequence(DicomTag.ConceptNameCodeSequence);
+        textConceptSeq.Items.Add(new DicomDataset
+        {
+            { DicomTag.CodeValue, "121106" },
+            { DicomTag.CodingSchemeDesignator, "DCM" },
+            { DicomTag.CodeMeaning, "Comment" }
+        });
 
-        var root = new DicomDataset();
-        root.AddOrUpdate(DicomTag.ValueType, "CONTAINER");
-        root.AddOrUpdate(DicomTag.ContinuityOfContent, "SEPARATE");
-        root.Add(DicomTag.ConceptNameCodeSequence, conceptSeq);
+        var textItem = new DicomDataset
+        {
+            { DicomTag.RelationshipType, "CONTAINS" },
+            { DicomTag.ValueType, "TEXT" },
+            { DicomTag.TextValue, "E2E findings." }
+        };
+        textItem.Add(DicomTag.ConceptNameCodeSequence, textConceptSeq);
 
         var contentSeq = new DicomSequence(DicomTag.ContentSequence);
-        contentSeq.Items.Add(root);
+        contentSeq.Items.Add(textItem);
 
         var rootConceptSeq = new DicomSequence(DicomTag.ConceptNameCodeSequence);
         rootConceptSeq.Items.Add(new DicomDataset
@@ -464,6 +497,8 @@ public class SrRetrieveWorkflowTests
         result.AddOrUpdate(DicomTag.StudyTime, "120000");
         result.AddOrUpdate(DicomTag.StudyID, "E2E-STUDY");
         result.AddOrUpdate(DicomTag.StudyDescription, "E2E SR Study");
+        result.AddOrUpdate(DicomTag.ValueType, "CONTAINER");
+        result.AddOrUpdate(DicomTag.ContinuityOfContent, "SEPARATE");
         // 报告级 SR 属性（用于专属查询键验证）
         result.AddOrUpdate(DicomTag.DocumentTitle, "E2E Structured Report");
         result.AddOrUpdate(DicomTag.CompletionFlag, "COMPLETE");
