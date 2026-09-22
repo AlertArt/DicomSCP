@@ -521,7 +521,7 @@ function openOHIF(studyUid, event) {
         }
 
         const baseUrl = `${window.location.protocol}//${window.location.host}`;
-        const ohifUrl = `${baseUrl}/dicomviewer/viewer/dicomjson?url=${encodeURIComponent(`${baseUrl}/viewer/ohif/${studyUid}`)}`;
+        const ohifUrl = `${baseUrl}/dicomviewer/viewer?StudyInstanceUIDs=${encodeURIComponent(studyUid)}`;
         
         console.log('Opening OHIF URL:', ohifUrl);
 

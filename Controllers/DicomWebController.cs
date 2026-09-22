@@ -154,6 +154,60 @@ public class DicomWebController(
         }
     }
 
+    [HttpGet("studies/{study}/series/{series}/metadata")]
+    public async Task<IActionResult> RetrieveSeriesMetadata(string study, string series)
+    {
+        var instances = await Task.Run(() => _repository.GetInstancesBySeriesUid(study, series, throwOnError: true));
+        return await BuildMetadataMultipartAsync(instances, $"series {series}");
+    }
+
+    [HttpGet("studies/{study}/metadata")]
+    public async Task<IActionResult> RetrieveStudyMetadata(string study)
+    {
+        var instances = await Task.Run(() => _repository.GetInstancesByStudyUid(study, throwOnError: true).ToList());
+        return await BuildMetadataMultipartAsync(instances, $"study {study}");
+    }
+
+    /// <summary>按 WADO-RS 约定返回 multipart/related（type=application/dicom+json）元数据。</summary>
+    private async Task<IActionResult> BuildMetadataMultipartAsync(IReadOnlyList<Instance> instances, string label)
+    {
+        try
+        {
+            if (instances.Count == 0)
+            {
+                return NotFound($"{label} not found");
+            }
+
+            var parts = new List<(string ContentType, byte[] Data)>();
+            foreach (var instance in instances)
+            {
+                var filePath = Path.Combine(_settings.StoragePath, instance.FilePath);
+                if (!System.IO.File.Exists(filePath))
+                {
+                    continue;
+                }
+
+                var dicomFile = await DicomFile.OpenAsync(filePath);
+                parts.Add((DicomWebHelpers.JsonContentType,
+                    Encoding.UTF8.GetBytes(DicomWebHelpers.ToDicomJson(dicomFile.Dataset))));
+            }
+
+            if (parts.Count == 0)
+            {
+                return NotFound("DICOM files not found");
+            }
+
+            var boundary = $"dicomweb-{Guid.NewGuid():N}";
+            var body = BuildMultipartRelated(parts, boundary);
+            return File(body, $"{DicomWebHelpers.MultipartRelated}; type=\"{DicomWebHelpers.JsonContentType}\"; boundary={boundary}");
+        }
+        catch (Exception ex)
+        {
+            DicomLogger.Error("DICOMweb", ex, "WADO-RS 元数据检索失败 - {Label}", label);
+            return StatusCode(500, "Metadata retrieval failed");
+        }
+    }
+
     [HttpGet("studies/{study}/series/{series}/instances/{instance}/rendered")]
     public async Task<IActionResult> RetrieveRendered(string study, string series, string instance, [FromQuery] string? contentType = null)
     {
