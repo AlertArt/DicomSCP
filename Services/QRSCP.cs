@@ -92,20 +92,26 @@ public partial class QRSCP : DicomService, IDicomServiceProvider, IDicomCEchoPro
                     pc.AbstractSyntax == DicomUID.PatientRootQueryRetrieveInformationModelMove || // C-MOVE (Patient Root)
                     pc.AbstractSyntax == DicomUID.StudyRootQueryRetrieveInformationModelGet ||  // C-GET
                     pc.AbstractSyntax == DicomUID.PatientRootQueryRetrieveInformationModelGet || // C-GET (Patient Root)
-                    pc.AbstractSyntax.StorageCategory != DicomStorageCategory.None)             // Storage (for C-GET)
+                    pc.AbstractSyntax.StorageCategory != DicomStorageCategory.None ||           // Storage (for C-GET)
+                    SrSupport.IsStructuredReport(pc.AbstractSyntax.UID))                        // SR Storage (for C-GET)
                 {
                     // 记录服务接受日志
-                    if (pc.AbstractSyntax.StorageCategory == DicomStorageCategory.None)
+                    if (pc.AbstractSyntax.StorageCategory == DicomStorageCategory.None &&
+                        !SrSupport.IsStructuredReport(pc.AbstractSyntax.UID))
                     {
                         DicomLogger.Information("QRSCP", "接受服务 - AET: {CallingAE}, 服务: {Service}", 
                             association.CallingAE, pc.AbstractSyntax.Name);
                     }
 
                     // 根据服务类型选择合适的传输语法
-                    if (pc.AbstractSyntax.StorageCategory != DicomStorageCategory.None)
+                    if (pc.AbstractSyntax.StorageCategory != DicomStorageCategory.None ||
+                        SrSupport.IsStructuredReport(pc.AbstractSyntax.UID))
                     {
-                        // 对于存储类服务（C-GET需要），接受所有支持的传输语法
-                        pc.AcceptTransferSyntaxes(AcceptedImageTransferSyntaxes);
+                        // 对于存储类服务（C-GET需要），接受图像/基本传输语法
+                        pc.AcceptTransferSyntaxes(
+                            SrSupport.IsStructuredReport(pc.AbstractSyntax.UID)
+                                ? AcceptedTransferSyntaxes
+                                : AcceptedImageTransferSyntaxes);
                     }
                     else if (pc.AbstractSyntax == DicomUID.StudyRootQueryRetrieveInformationModelGet ||
                              pc.AbstractSyntax == DicomUID.PatientRootQueryRetrieveInformationModelGet ||

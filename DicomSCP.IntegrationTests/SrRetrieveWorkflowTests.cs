@@ -316,6 +316,77 @@ public class SrRetrieveWorkflowTests
         }
     }
 
+    [Fact]
+    public async Task SrStowRs_StoresAndRetrievesReport()
+    {
+        var (study, series, sop) = NewUids();
+        var ds = CreateMinimalSr(study, series, sop);
+
+        using var fileStream = new MemoryStream();
+        await new DicomFile(ds).SaveAsync(fileStream);
+        var bytes = fileStream.ToArray();
+
+        var boundary = "dicomweb-" + Guid.NewGuid().ToString("N");
+        using var multipart = new MultipartContent("related", boundary);
+        var part = new ByteArrayContent(bytes);
+        part.Headers.ContentType = new MediaTypeHeaderValue("application/dicom");
+        multipart.Add(part);
+
+        using var response = await _fx.Http.PostAsync("/dicomweb/studies", multipart);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        Assert.True(await _fx.WaitForFileAsync(sop.UID + ".dcm", 15000), "STOW-RS stored SR file not found");
+
+        Assert.Equal("E2E Structured Report", await _fx.QueryScalarAsync<string>(
+            "SELECT DocumentTitle FROM Instances WHERE SopInstanceUid = @Sop", new { Sop = sop.UID }));
+
+        using var qido = await GetAsync($"/dicomweb/studies?StudyInstanceUID={study.UID}", "application/dicom+json");
+        Assert.Equal(HttpStatusCode.OK, qido.StatusCode);
+        Assert.Contains(study.UID, await qido.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task SrCGet_RetrievesReport()
+    {
+        var (study, series, sop) = NewUids();
+        var filePath = await StoreSrAsync(study, series, sop);
+        try
+        {
+            var client = _fx.CreateClient(E2EFixture.QrPort, "QRSCP");
+            // C-GET 需要客户端以 SCP 角色接受存储 SOP 类（否则服务端无法回推 C-STORE）
+            var srContext = DicomPresentationContext.GetScpRolePresentationContextsFromStorageUids(
+                    null, DicomTransferSyntax.ImplicitVRLittleEndian)
+                .First(pc => pc.AbstractSyntax.UID == DicomUID.BasicTextSRStorage.UID);
+            client.AdditionalPresentationContexts.Add(srContext);
+
+            var received = new List<string>();
+            client.OnCStoreRequest = request =>
+            {
+                received.Add(request.Dataset.GetSingleValueOrDefault<string>(DicomTag.SOPInstanceUID, string.Empty));
+                return Task.FromResult(new DicomCStoreResponse(request, DicomStatus.Success));
+            };
+
+            DicomStatus? getStatus = null;
+            var get = new DicomCGetRequest(study.UID, DicomPriority.Medium);
+            get.OnResponseReceived += (_, r) =>
+            {
+                if (r.Status != DicomStatus.Pending)
+                {
+                    getStatus = r.Status;
+                }
+            };
+            await client.AddRequestAsync(get);
+            await client.SendAsync();
+
+            Assert.Equal(DicomStatus.Success, getStatus);
+            Assert.Contains(sop.UID, received);
+        }
+        finally
+        {
+            DeleteTemp(filePath);
+        }
+    }
+
     private async Task<(string Sop, string Study, string Series)> StoreMinimalImageAsync()
     {
         var (imagePath, imageSop, imageStudy, imageSeries) = TestData.CreateMinimalImage();
