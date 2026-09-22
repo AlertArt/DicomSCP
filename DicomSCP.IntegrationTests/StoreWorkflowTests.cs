@@ -72,6 +72,17 @@ public class StoreWorkflowTests
             var wado = await _fx.Http.GetAsync($"/dicomweb/studies/{studyUid}/series/{seriesUid}/instances/{sopUid}");
             Assert.True(wado.IsSuccessStatusCode, $"WADO-RS failed: {(int)wado.StatusCode}");
 
+            // WADO-RS 研究级/序列级元数据（multipart/related, application/dicom+json），OHIF 依赖
+            var studyMeta = await _fx.Http.GetAsync($"/dicomweb/studies/{studyUid}/metadata");
+            Assert.True(studyMeta.IsSuccessStatusCode, $"study metadata failed: {(int)studyMeta.StatusCode}");
+            Assert.Equal("multipart/related", studyMeta.Content.Headers.ContentType?.MediaType);
+            Assert.Contains(sopUid, await studyMeta.Content.ReadAsStringAsync());
+
+            var seriesMeta = await _fx.Http.GetAsync($"/dicomweb/studies/{studyUid}/series/{seriesUid}/metadata");
+            Assert.True(seriesMeta.IsSuccessStatusCode, $"series metadata failed: {(int)seriesMeta.StatusCode}");
+            Assert.Equal("multipart/related", seriesMeta.Content.Headers.ContentType?.MediaType);
+            Assert.Contains(sopUid, await seriesMeta.Content.ReadAsStringAsync());
+
             // WADO-RS 渲染端点：图像应返回 JPEG
             var rendered = await _fx.Http.GetAsync($"/dicomweb/studies/{studyUid}/series/{seriesUid}/instances/{sopUid}/rendered");
             Assert.True(rendered.IsSuccessStatusCode, $"WADO-RS rendered failed: {(int)rendered.StatusCode}");

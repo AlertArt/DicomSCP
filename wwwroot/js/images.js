@@ -445,24 +445,11 @@ async function toggleSeriesInfo(row) {
     }
 }
 
-// 预览序列
+// 预览序列（统一使用 OHIF 查看器，直连标准 DICOMweb）
 function previewSeries(studyUid, seriesUid) {
     try {
-        return showDialog({
-            title: 'DICOM 查看器',
-            content: `
-                <div style="height: calc(90vh - 120px);">
-                    <iframe 
-                        src="/viewer.html?studyUid=${encodeURIComponent(studyUid)}&seriesUid=${encodeURIComponent(seriesUid)}"
-                        style="width: 100%; height: 100%; border: none;"
-                        onload="this.style.opacity='1'"
-                    ></iframe>
-                </div>
-            `,
-            showFooter: false,  // 不显示底部按钮
-            size: 'xl',  // 使用超大对话框
-            fullHeight: true  // 使用全高度
-        });
+        const baseUrl = `${window.location.protocol}//${window.location.host}`;
+        showOhifViewer(`${baseUrl}/dicomviewer/viewer?StudyInstanceUIDs=${encodeURIComponent(studyUid)}&SeriesInstanceUIDs=${encodeURIComponent(seriesUid)}`);
     } catch (error) {
         console.error('预览序列失败:', error);
         window.showToast('预览序列失败', 'error');
@@ -507,23 +494,25 @@ function openWeasis(studyUid, event) {
     }
 }
 
-// 添加打开 OHIF 的函数
+// 打开 OHIF 查看器（研究级）
 function openOHIF(studyUid, event) {
+    if (event) {
+        event.stopPropagation();
+    }
+    const baseUrl = `${window.location.protocol}//${window.location.host}`;
+    showOhifViewer(`${baseUrl}/dicomviewer/viewer?StudyInstanceUIDs=${encodeURIComponent(studyUid)}`);
+}
+
+// 以全屏模态框内嵌 OHIF 查看器
+function showOhifViewer(ohifUrl) {
     try {
-        if (event) {
-            event.stopPropagation();
-        }
+        console.log('Opening OHIF URL:', ohifUrl);
 
         // 移除已存在的对话框
         const existingDialog = document.getElementById('ohifViewerDialog');
         if (existingDialog) {
             existingDialog.remove();
         }
-
-        const baseUrl = `${window.location.protocol}//${window.location.host}`;
-        const ohifUrl = `${baseUrl}/dicomviewer/viewer?StudyInstanceUIDs=${encodeURIComponent(studyUid)}`;
-        
-        console.log('Opening OHIF URL:', ohifUrl);
 
         // 创建对话框 HTML
         const dialogHtml = `
