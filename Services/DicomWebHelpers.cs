@@ -15,6 +15,7 @@ public static class DicomWebHelpers
     public const string DicomContentType = "application/dicom";
     public const string OctetStreamContentType = "application/octet-stream";
     public const string JpegContentType = "image/jpeg";
+    public const string PngContentType = "image/png";
     public const string MultipartRelated = "multipart/related";
 
     /// <summary>

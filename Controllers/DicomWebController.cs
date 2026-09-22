@@ -154,6 +154,46 @@ public class DicomWebController(
         }
     }
 
+    [HttpGet("studies/{study}/series/{series}/instances/{instance}/rendered")]
+    public async Task<IActionResult> RetrieveRendered(string study, string series, string instance, [FromQuery] string? contentType = null)
+    {
+        try
+        {
+            var dbInstance = await _repository.GetInstanceAsync(instance);
+            if (dbInstance == null)
+            {
+                return NotFound("Instance not found");
+            }
+
+            var filePath = Path.Combine(_settings.StoragePath, dbInstance.FilePath);
+            if (!System.IO.File.Exists(filePath))
+            {
+                return NotFound("DICOM file not found");
+            }
+
+            var dicomFile = await DicomFile.OpenAsync(filePath);
+
+            // 非图像实例（如结构化报告 SR）无像素，无法渲染，显式返回 415
+            if (!dicomFile.Dataset.Contains(DicomTag.PixelData))
+            {
+                DicomLogger.Warning("DICOMweb", "实例无像素数据，无法渲染 - Instance: {Instance}", instance);
+                return StatusCode(StatusCodes.Status415UnsupportedMediaType,
+                    "Instance has no pixel data; rendering is not supported");
+            }
+
+            var requested = (contentType ?? string.Empty) + " " + Request.Headers["Accept"].ToString();
+            var format = requested.Contains("png", StringComparison.OrdinalIgnoreCase) ? "png" : "jpeg";
+
+            var bytes = await RenderFrameAsync(dicomFile.Dataset, 0, format);
+            return File(bytes, format == "png" ? DicomWebHelpers.PngContentType : DicomWebHelpers.JpegContentType);
+        }
+        catch (Exception ex)
+        {
+            DicomLogger.Error("DICOMweb", ex, "WADO-RS 渲染失败 - Instance: {Instance}", instance);
+            return StatusCode(500, "Rendering failed");
+        }
+    }
+
     [HttpGet("studies/{study}/series/{series}/instances/{instance}/frames/{frames}")]
     public async Task<IActionResult> RetrieveFrames(string study, string series, string instance, string frames, [FromQuery] string transferSyntax = "")
     {
@@ -479,19 +519,34 @@ public class DicomWebController(
     {
         try
         {
-            var dicomImage = new DicomImage(dataset, frameIndex);
-            var renderedImage = dicomImage.RenderImage();
-            using var ms = new MemoryStream();
-            using var image = Image.LoadPixelData<Rgba32>(
-                renderedImage.AsBytes(), renderedImage.Width, renderedImage.Height);
-            await image.SaveAsJpegAsync(ms, new JpegEncoder { Quality = 90 });
-            return ms.ToArray();
+            return await RenderFrameAsync(dataset, frameIndex, "jpeg");
         }
         catch
         {
             // 渲染失败时回退到原始帧数据
             return DicomPixelData.Create(dataset).GetFrame(frameIndex).Data;
         }
+    }
+
+    /// <summary>将指定帧渲染为 JPEG/PNG 字节。</summary>
+    private async Task<byte[]> RenderFrameAsync(DicomDataset dataset, int frameIndex, string format)
+    {
+        var dicomImage = new DicomImage(dataset, frameIndex);
+        var renderedImage = dicomImage.RenderImage();
+        using var ms = new MemoryStream();
+        using var image = Image.LoadPixelData<Rgba32>(
+            renderedImage.AsBytes(), renderedImage.Width, renderedImage.Height);
+
+        if (string.Equals(format, "png", StringComparison.OrdinalIgnoreCase))
+        {
+            await image.SaveAsPngAsync(ms);
+        }
+        else
+        {
+            await image.SaveAsJpegAsync(ms, new JpegEncoder { Quality = 90 });
+        }
+
+        return ms.ToArray();
     }
 
     private static List<int> ParseFrameList(string frames)

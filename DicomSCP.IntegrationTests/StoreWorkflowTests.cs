@@ -71,6 +71,12 @@ public class StoreWorkflowTests
 
             var wado = await _fx.Http.GetAsync($"/dicomweb/studies/{studyUid}/series/{seriesUid}/instances/{sopUid}");
             Assert.True(wado.IsSuccessStatusCode, $"WADO-RS failed: {(int)wado.StatusCode}");
+
+            // WADO-RS 渲染端点：图像应返回 JPEG
+            var rendered = await _fx.Http.GetAsync($"/dicomweb/studies/{studyUid}/series/{seriesUid}/instances/{sopUid}/rendered");
+            Assert.True(rendered.IsSuccessStatusCode, $"WADO-RS rendered failed: {(int)rendered.StatusCode}");
+            Assert.Equal("image/jpeg", rendered.Content.Headers.ContentType?.MediaType);
+            Assert.True((await rendered.Content.ReadAsByteArrayAsync()).Length > 0, "rendered image body is empty");
         }
         finally
         {

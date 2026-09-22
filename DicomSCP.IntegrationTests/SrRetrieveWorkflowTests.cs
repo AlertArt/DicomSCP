@@ -145,6 +145,12 @@ public class SrRetrieveWorkflowTests
                 Assert.Equal(HttpStatusCode.UnsupportedMediaType, frames.StatusCode);
             }
 
+            // WADO-RS 渲染端点对无像素的 SR 应返回 415
+            using (var rendered = await GetAsync($"/dicomweb/studies/{study.UID}/series/{series.UID}/instances/{sop.UID}/rendered"))
+            {
+                Assert.Equal(HttpStatusCode.UnsupportedMediaType, rendered.StatusCode);
+            }
+
             // 传统 WADO 显式请求 JPEG 渲染对 SR 应返回 415，而不是 500
             using (var wadoJpeg = await GetAsync(
                 $"/wado?requestType=WADO&studyUID={study.UID}&seriesUID={series.UID}&objectUID={sop.UID}&contentType=image/jpeg"))
