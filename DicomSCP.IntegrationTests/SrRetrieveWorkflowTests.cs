@@ -387,6 +387,58 @@ public class SrRetrieveWorkflowTests
         }
     }
 
+    [Fact]
+    public async Task SrStorageCommitment_VerifiesAndPersistsSuccess()
+    {
+        var (study, series, sop) = NewUids();
+        var filePath = await StoreSrAsync(study, series, sop);
+        try
+        {
+            var transactionUid = DicomUIDGenerator.GenerateDerivedFromUUID().UID;
+            var referenced = new DicomDataset
+            {
+                { DicomTag.ReferencedSOPClassUID, DicomUID.BasicTextSRStorage.UID },
+                { DicomTag.ReferencedSOPInstanceUID, sop.UID }
+            };
+            var seq = new DicomSequence(DicomTag.ReferencedSOPSequence);
+            seq.Items.Add(referenced);
+            var nActionDataset = new DicomDataset
+            {
+                { DicomTag.TransactionUID, transactionUid },
+                seq
+            };
+
+            DicomStatus? actionStatus = null;
+            var commit = _fx.CreateClient(E2EFixture.CommitmentPort, "STORECOMMITSCP");
+            var nAction = new DicomNActionRequest(
+                DicomUID.StorageCommitmentPushModel,
+                DicomUID.StorageCommitmentPushModelInstance,
+                1)
+            {
+                Dataset = nActionDataset
+            };
+            nAction.OnResponseReceived += (_, r) => actionStatus = r.Status;
+            await commit.AddRequestAsync(nAction);
+            await commit.SendAsync();
+
+            Assert.Equal(DicomStatus.Success, actionStatus);
+
+            var persisted = await _fx.WaitForAsync(async () =>
+            {
+                var status = await _fx.QueryScalarAsync<string>(
+                    "SELECT Status FROM StorageCommitments WHERE TransactionUid = @t", new { t = transactionUid });
+                var failed = await _fx.QueryScalarAsync<int?>(
+                    "SELECT FailedCount FROM StorageCommitments WHERE TransactionUid = @t", new { t = transactionUid });
+                return status == "Success" && failed == 0;
+            }, 20000);
+            Assert.True(persisted, "SR storage commitment did not reach Success");
+        }
+        finally
+        {
+            DeleteTemp(filePath);
+        }
+    }
+
     private async Task<(string Sop, string Study, string Series)> StoreMinimalImageAsync()
     {
         var (imagePath, imageSop, imageStudy, imageSeries) = TestData.CreateMinimalImage();
