@@ -52,8 +52,86 @@ public static class TestData
         return (filePath, sop.UID, study.UID, series.UID);
     }
 
-    public static DicomDataset CreateMpps(ushort statusCode, string mppsUid, string studyUid)
+    /// <summary>构造最小 Key Object Selection Document (KOS)，标记一张关键图像。</summary>
+    public static DicomDataset CreateMinimalKos(
+        string studyUid, string seriesUid, string sopUid,
+        string refStudyUid, string refSeriesUid, string refSopUid)
     {
+        var rootConceptSeq = new DicomSequence(DicomTag.ConceptNameCodeSequence);
+        rootConceptSeq.Items.Add(new DicomDataset
+        {
+            { DicomTag.CodeValue, "113000" },
+            { DicomTag.CodingSchemeDesignator, "DCM" },
+            { DicomTag.CodeMeaning, "Of Interest" }
+        });
+
+        var imageConceptSeq = new DicomSequence(DicomTag.ConceptNameCodeSequence);
+        imageConceptSeq.Items.Add(new DicomDataset
+        {
+            { DicomTag.CodeValue, "113000" },
+            { DicomTag.CodingSchemeDesignator, "DCM" },
+            { DicomTag.CodeMeaning, "Of Interest" }
+        });
+
+        var contentRefSopSeq = new DicomSequence(DicomTag.ReferencedSOPSequence);
+        contentRefSopSeq.Items.Add(new DicomDataset
+        {
+            { DicomTag.ReferencedSOPClassUID, DicomUID.CTImageStorage.UID },
+            { DicomTag.ReferencedSOPInstanceUID, refSopUid }
+        });
+
+        var imageItem = new DicomDataset
+        {
+            { DicomTag.RelationshipType, "CONTAINS" },
+            { DicomTag.ValueType, "IMAGE" }
+        };
+        imageItem.Add(DicomTag.ConceptNameCodeSequence, imageConceptSeq);
+        imageItem.Add(DicomTag.ReferencedSOPSequence, contentRefSopSeq);
+
+        var contentSeq = new DicomSequence(DicomTag.ContentSequence);
+        contentSeq.Items.Add(imageItem);
+
+        // 证据链
+        var evSopSeq = new DicomSequence(DicomTag.ReferencedSOPSequence);
+        evSopSeq.Items.Add(new DicomDataset
+        {
+            { DicomTag.ReferencedSOPClassUID, DicomUID.CTImageStorage.UID },
+            { DicomTag.ReferencedSOPInstanceUID, refSopUid }
+        });
+        var evSeriesItem = new DicomDataset { { DicomTag.SeriesInstanceUID, refSeriesUid } };
+        evSeriesItem.Add(DicomTag.ReferencedSOPSequence, evSopSeq);
+        var evSeriesSeq = new DicomSequence(DicomTag.ReferencedSeriesSequence);
+        evSeriesSeq.Items.Add(evSeriesItem);
+        var evStudyItem = new DicomDataset { { DicomTag.StudyInstanceUID, refStudyUid } };
+        evStudyItem.Add(DicomTag.ReferencedSeriesSequence, evSeriesSeq);
+        var evStudySeq = new DicomSequence(DicomTag.CurrentRequestedProcedureEvidenceSequence);
+        evStudySeq.Items.Add(evStudyItem);
+
+        return new DicomDataset
+        {
+            { DicomTag.SOPClassUID, DicomUID.KeyObjectSelectionDocumentStorage },
+            { DicomTag.SOPInstanceUID, sopUid },
+            { DicomTag.StudyInstanceUID, studyUid },
+            { DicomTag.SeriesInstanceUID, seriesUid },
+            { DicomTag.SeriesNumber, 1 },
+            { DicomTag.InstanceNumber, 1 },
+            { DicomTag.Modality, "SR" },
+            { DicomTag.PatientID, "E2E-PAT-001" },
+            { DicomTag.PatientName, "E2E^Check" },
+            { DicomTag.StudyDate, "20240101" },
+            { DicomTag.StudyTime, "120000" },
+            { DicomTag.ValueType, "CONTAINER" },
+            { DicomTag.ContinuityOfContent, "SEPARATE" },
+            { DicomTag.CompletionFlag, "COMPLETE" },
+            { DicomTag.VerificationFlag, "UNVERIFIED" },
+            { DicomTag.DocumentTitle, "E2E Key Object Selection" },
+            { DicomTag.ConceptNameCodeSequence, rootConceptSeq },
+            { DicomTag.ContentSequence, contentSeq },
+            { DicomTag.CurrentRequestedProcedureEvidenceSequence, evStudySeq }
+        };
+    }
+
+    public static DicomDataset CreateMpps(ushort statusCode, string mppsUid, string studyUid)    {
         var scheduled = new DicomSequence(DicomTag.ScheduledStepAttributesSequence);
         scheduled.Items.Add(new DicomDataset
         {

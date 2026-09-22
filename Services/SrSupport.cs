@@ -9,6 +9,9 @@ namespace DicomSCP.Services;
 /// </summary>
 public static class SrSupport
 {
+    /// <summary>Key Object Selection Document (KOS) SOP 类 UID。</summary>
+    public const string KeyObjectSelectionSopClassUid = "1.2.840.10008.5.1.4.1.1.88.59";
+
     /// <summary>DICOM 标准 SR 存储 SOP 类 UID 白名单。</summary>
     public static readonly IReadOnlySet<string> StorageSopClassUids = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -17,11 +20,15 @@ public static class SrSupport
         "1.2.840.10008.5.1.4.1.1.88.33", // Comprehensive SR
         "1.2.840.10008.5.1.4.1.1.88.34", // Comprehensive 3D SR
         "1.2.840.10008.5.1.4.1.1.88.40", // Procedure Log
-        "1.2.840.10008.5.1.4.1.1.88.59", // Key Object Selection Document
+        KeyObjectSelectionSopClassUid,   // Key Object Selection Document
     };
 
     public static bool IsStructuredReport(string? sopClassUid) =>
         !string.IsNullOrEmpty(sopClassUid) && StorageSopClassUids.Contains(sopClassUid);
+
+    /// <summary>是否为 Key Object Selection Document（关键对象选择，标记关键图像）。</summary>
+    public static bool IsKeyObjectSelection(string? sopClassUid) =>
+        string.Equals(sopClassUid, KeyObjectSelectionSopClassUid, StringComparison.Ordinal);
 
     public static bool IsStructuredReport(DicomDataset dataset) =>
         IsStructuredReport(dataset.GetSingleValueOrDefault<string>(DicomTag.SOPClassUID, string.Empty));

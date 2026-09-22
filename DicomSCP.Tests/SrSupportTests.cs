@@ -36,6 +36,20 @@ public class SrSupportTests
     }
 
     [Fact]
+    public void IsKeyObjectSelection_RecognizesKos()
+    {
+        Assert.True(SrSupport.IsKeyObjectSelection("1.2.840.10008.5.1.4.1.1.88.59"));
+        Assert.False(SrSupport.IsKeyObjectSelection("1.2.840.10008.5.1.4.1.1.88.11"));
+        Assert.False(SrSupport.IsKeyObjectSelection(null));
+    }
+
+    [Fact]
+    public void IsStructuredReport_IncludesKeyObjectSelection()
+    {
+        Assert.True(SrSupport.IsStructuredReport(SrSupport.KeyObjectSelectionSopClassUid));
+    }
+
+    [Fact]
     public void Extract_ReadsReportFieldsAndConceptName()
     {
         var dataset = DicomTestData.MakeStructuredReport(

@@ -580,6 +580,38 @@ public class DicomRepository(IConfiguration configuration)
 
     // ── SR 报告 ↔ 图像关联查询 ─────────────────────────────────────────────
 
+    /// <summary>按 SOP 类 UID 查询某研究下的实例（用于列出 KOS 等特定对象）。</summary>
+    public List<Instance> GetInstancesBySopClass(string studyInstanceUid, string sopClassUid, bool throwOnError = false)
+    {
+        try
+        {
+            using var connection = CreateConnection();
+            var sql = @"
+                SELECT i.*, se.StudyInstanceUid, se.Modality
+                FROM Instances i
+                JOIN Series se ON i.SeriesInstanceUid = se.SeriesInstanceUid
+                WHERE se.StudyInstanceUid = @StudyInstanceUid
+                  AND i.SopClassUid = @SopClassUid
+                ORDER BY CAST(i.InstanceNumber AS INTEGER)";
+
+            var result = connection.Query<Instance>(sql, new
+            {
+                StudyInstanceUid = studyInstanceUid,
+                SopClassUid = sopClassUid
+            }).ToList();
+
+            LogInformation("按SOP类查询实例完成 - Study: {Study}, SOPClass: {SopClass}, 返回记录数: {Count}",
+                studyInstanceUid, sopClassUid, result.Count);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            LogError(ex, "按SOP类查询实例失败 - Study: {Study}, SOPClass: {SopClass}", studyInstanceUid, sopClassUid);
+            if (throwOnError) throw;
+            return [];
+        }
+    }
+
     /// <summary>查询某 SR 报告引用的所有实例（含本地元数据富化）。</summary>
     public List<SrReferenceInfo> GetSrReferences(string srSopInstanceUid, bool throwOnError = false)
     {
@@ -615,8 +647,7 @@ public class DicomRepository(IConfiguration configuration)
     }
 
     /// <summary>查询引用了某实例的所有 SR 报告。</summary>
-    public List<SrReferencingInfo> GetSrsReferencing(string sopInstanceUid, bool throwOnError = false)
-    {
+    public List<SrReferencingInfo> GetSrsReferencing(string sopInstanceUid, bool throwOnError = false)    {
         try
         {
             using var connection = CreateConnection();

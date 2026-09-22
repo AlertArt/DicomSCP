@@ -72,6 +72,41 @@ public class SrController : ControllerBase
         }
     }
 
+    /// <summary>列出某研究下的关键对象选择文档(KOS)。</summary>
+    [HttpGet("key-objects")]
+    public IActionResult GetKeyObjects([FromQuery] string studyInstanceUid)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(studyInstanceUid))
+            {
+                return BadRequest("studyInstanceUid is required");
+            }
+
+            var instances = _repository.GetInstancesBySopClass(
+                studyInstanceUid, SrSupport.KeyObjectSelectionSopClassUid, throwOnError: true);
+
+            var result = instances.Select(i => new SrKeyObjectInfo
+            {
+                SopInstanceUid = i.SopInstanceUid,
+                StudyInstanceUid = i.StudyInstanceUid,
+                SeriesInstanceUid = i.SeriesInstanceUid,
+                DocumentTitle = i.DocumentTitle,
+                CompletionFlag = i.CompletionFlag,
+                VerificationFlag = i.VerificationFlag,
+                ConceptCodeValue = i.ConceptCodeValue,
+                ConceptCodeMeaning = i.ConceptCodeMeaning
+            }).ToList();
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            DicomLogger.Error("Sr", ex, "查询 KOS 失败 - Study: {Study}", studyInstanceUid);
+            return StatusCode(500, "查询 KOS 失败");
+        }
+    }
+
     /// <summary>读取该 SR 报告的内容树（报告头 + 内容项），供查看器呈现。</summary>
     [HttpGet("{sopInstanceUid}/content")]
     public async Task<IActionResult> GetContent(string sopInstanceUid)

@@ -41,6 +41,19 @@ public class SrReferencingInfo
     public string? VerificationFlag { get; set; }
 }
 
+/// <summary>关键对象选择文档(KOS)查询结果。</summary>
+public class SrKeyObjectInfo
+{
+    public string SopInstanceUid { get; set; } = string.Empty;
+    public string? StudyInstanceUid { get; set; }
+    public string? SeriesInstanceUid { get; set; }
+    public string? DocumentTitle { get; set; }
+    public string? CompletionFlag { get; set; }
+    public string? VerificationFlag { get; set; }
+    public string? ConceptCodeValue { get; set; }
+    public string? ConceptCodeMeaning { get; set; }
+}
+
 /// <summary>SR 生成请求（REST → Basic Text SR）。</summary>
 public class SrGenerationRequest
 {

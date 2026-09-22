@@ -439,6 +439,52 @@ public class SrRetrieveWorkflowTests
         }
     }
 
+    [Fact]
+    public async Task KeyObjectSelection_StoresQueriesAndLinksKeyImage()
+    {
+        var (imageSop, imageStudy, imageSeries) = await StoreMinimalImageAsync();
+
+        var (study, series, sop) = NewUids();
+        var kos = TestData.CreateMinimalKos(study.UID, series.UID, sop.UID, imageStudy, imageSeries, imageSop);
+        var filePath = Path.Combine(Path.GetTempPath(), "kos_" + Guid.NewGuid().ToString("N") + ".dcm");
+        new DicomFile(kos).Save(filePath);
+
+        try
+        {
+            DicomStatus? status = null;
+            var store = _fx.CreateClient(E2EFixture.StorePort, "STORESCP");
+            var request = new DicomCStoreRequest(filePath);
+            request.OnResponseReceived += (_, r) => status = r.Status;
+            await store.AddRequestAsync(request);
+            await store.SendAsync();
+            Assert.Equal(DicomStatus.Success, status);
+
+            Assert.True(await _fx.WaitForFileAsync(sop.UID + ".dcm", 15000), "stored KOS file not found");
+            Assert.True(await _fx.WaitForAsync(
+                async () => await _fx.QueryCountAsync(
+                    "SELECT COUNT(*) FROM Instances WHERE SopInstanceUid = @Sop", new { Sop = sop.UID }) > 0,
+                20000), "KOS was not persisted to the database");
+
+            // 按研究列出 KOS
+            using (var list = await GetAsync($"/api/Sr/key-objects?studyInstanceUid={study.UID}", "application/json"))
+            {
+                Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+                Assert.Contains(sop.UID, await list.Content.ReadAsStringAsync());
+            }
+
+            // KOS 引用的关键图像
+            using (var references = await GetAsync($"/api/Sr/{sop.UID}/references", "application/json"))
+            {
+                Assert.Equal(HttpStatusCode.OK, references.StatusCode);
+                Assert.Contains(imageSop, await references.Content.ReadAsStringAsync());
+            }
+        }
+        finally
+        {
+            DeleteTemp(filePath);
+        }
+    }
+
     private async Task<(string Sop, string Study, string Series)> StoreMinimalImageAsync()
     {
         var (imagePath, imageSop, imageStudy, imageSeries) = TestData.CreateMinimalImage();
