@@ -24,7 +24,7 @@ window.config = {
       configuration: {
         friendlyName: 'DicomSCP DICOMweb',
         name: 'DicomSCP',
-        wadoUriRoot: '/dicomweb',
+        wadoUriRoot: '/wado',
         qidoRoot: '/dicomweb',
         wadoRoot: '/dicomweb',
         qidoSupportsIncludeField: false,

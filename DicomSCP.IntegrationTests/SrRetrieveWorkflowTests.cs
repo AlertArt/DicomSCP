@@ -43,13 +43,24 @@ public class SrRetrieveWorkflowTests
                 Assert.Contains(sop.UID, await qidoInst.Content.ReadAsStringAsync());
             }
 
-            // WADO-RS：实例元数据（DICOM JSON）应可检索
+            // WADO-RS：实例元数据（DICOM JSON）应可检索，且包含 SR 内容（OHIF SR 视图解析依赖）
             using (var metadata = await GetAsync($"/dicomweb/studies/{study.UID}/series/{series.UID}/instances/{sop.UID}/metadata", "application/dicom+json"))
             {
                 Assert.Equal(HttpStatusCode.OK, metadata.StatusCode);
                 var body = await metadata.Content.ReadAsStringAsync();
                 Assert.Contains(sop.UID, body);
                 Assert.Contains("1.2.840.10008.5.1.4.1.1.88.11", body);
+                Assert.Contains("00420010", body); // DocumentTitle
+                Assert.Contains("0040A730", body); // ContentSequence
+            }
+
+            // WADO-RS：序列级元数据应包含 SR 内容（OHIF 显示集构建依赖）
+            using (var seriesMetadata = await GetAsync($"/dicomweb/studies/{study.UID}/series/{series.UID}/metadata", "application/dicom+json"))
+            {
+                Assert.Equal(HttpStatusCode.OK, seriesMetadata.StatusCode);
+                var body = await seriesMetadata.Content.ReadAsStringAsync();
+                Assert.Contains(sop.UID, body);
+                Assert.Contains("0040A730", body); // ContentSequence
             }
 
             // WADO-RS：实例本体（DICOM）应可检索
