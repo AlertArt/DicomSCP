@@ -1,7 +1,6 @@
 using System.Text;
 using FellowOakDicom;
 using FellowOakDicom.Network;
-using FellowOakDicom.Network.Client;
 using DicomSCP.Configuration;
 using DicomSCP.Models;
 using DicomSCP.Repository;
@@ -26,14 +25,6 @@ public class StorageCommitmentSCP : DicomService, IDicomServiceProvider, IDicomN
 
     // Action Type ID：1 = 存储 SOP 实例（Store SOP Instances）
     private const ushort ActionTypeStoreSopInstances = 1;
-
-    // N-EVENT-REPORT 事件类型：1 = 成功，2 = 存在失败
-    private const ushort EventReportSuccess = 1;
-    private const ushort EventReportFailuresExist = 2;
-
-    // FailureReason：0112 = No Such Object Instance（实例未被归档）
-    private const ushort FailureReasonNoSuchObjectInstance = 0x0112;
-    private const ushort FailureReasonProcessingFailure = 0x0110;
 
     // 支持的传输语法
     private static readonly DicomTransferSyntax[] AcceptedTransferSyntaxes = new[]
@@ -209,7 +200,13 @@ public class StorageCommitmentSCP : DicomService, IDicomServiceProvider, IDicomN
                 TransactionUid = transactionUid,
                 CallingAE = Association.CallingAE,
                 Status = StorageCommitmentStatus.Pending.ToString(),
-                TotalCount = referenced.Count
+                TotalCount = referenced.Count,
+                NotificationStatus = StorageCommitmentNotificationStatus.Pending.ToString(),
+                RemoteHost = Association.RemoteHost,
+                RemotePort = Association.RemotePort,
+                ExpireTime = _settings.StorageCommitmentSCP.RecordTtlDays > 0
+                    ? DateTime.Now.AddDays(_settings.StorageCommitmentSCP.RecordTtlDays)
+                    : null
             };
             try
             {
@@ -343,101 +340,34 @@ public class StorageCommitmentSCP : DicomService, IDicomServiceProvider, IDicomN
     {
         try
         {
-            var eventType = failed.Count == 0 ? EventReportSuccess : EventReportFailuresExist;
-
+            var eventType = StorageCommitmentNotifier.ResolveEventType(referenced);
             var status = failed.Count == 0 ? StorageCommitmentStatus.Success : StorageCommitmentStatus.FailuresExist;
-            await _commitmentRepository.UpdateTransactionResultAsync(transactionUid, status, failed);
+            await _commitmentRepository.UpdateTransactionResultAsync(transactionUid, status, referenced.Count, referenced);
 
             DicomLogger.Information("StorageCommitmentSCP", "推送存储承诺结果 - Transaction: {TransactionUid}, 事件类型: {EventType}, 失败: {FailedCount}/{TotalCount}",
                 transactionUid, eventType, failed.Count, referenced.Count);
 
-            // EventReport 数据集：TransactionUID + ReferencedSOPSequence
-            var dataset = new DicomDataset
+            var dataset = StorageCommitmentNotifier.BuildEventReportDataset(transactionUid, referenced);
+            var (sent, error) = await StorageCommitmentNotifier.SendAsync(_settings, host, port, callingAe, eventType, dataset);
+
+            // 记录投递结果：失败也保留记录与错误信息，绝不静默丢失
+            await _commitmentRepository.UpdateNotificationResultAsync(transactionUid, sent, error);
+
+            if (sent)
             {
-                { DicomTag.TransactionUID, transactionUid }
-            };
-            var outSequence = new DicomSequence(DicomTag.ReferencedSOPSequence);
-            foreach (var item in referenced)
-            {
-                var itemDs = new DicomDataset
-                {
-                    { DicomTag.ReferencedSOPClassUID, item.SopClassUid },
-                    { DicomTag.ReferencedSOPInstanceUID, item.SopInstanceUid }
-                };
-                if (!item.Verified)
-                {
-                    itemDs.Add(DicomTag.FailureReason, item.FailureReason == 0 ? FailureReasonNoSuchObjectInstance : item.FailureReason);
-                }
-                outSequence.Items.Add(itemDs);
+                DicomLogger.Information("StorageCommitmentSCP", "存储承诺事件推送成功 - Transaction: {TransactionUid}, 目标: {Host}:{Port} {Ae}",
+                    transactionUid, host, port, callingAe);
             }
-            dataset.Add(outSequence);
-
-            var request = new DicomNEventReportRequest(
-                DicomUID.StorageCommitmentPushModel,
-                DicomUID.StorageCommitmentPushModelInstance,
-                eventType)
+            else
             {
-                Dataset = dataset
-            };
-
-            await SendEventReportWithRetryAsync(host, port, callingAe, request);
-            DicomLogger.Information("StorageCommitmentSCP", "存储承诺事件推送成功 - Transaction: {TransactionUid}, 目标: {Host}:{Port} {Ae}",
-                transactionUid, host, port, callingAe);
+                DicomLogger.Error("StorageCommitmentSCP", null,
+                    "存储承诺事件推送失败（已记录，可重推）- Transaction: {TransactionUid}, 目标: {Host}:{Port} {Ae}, 错误: {Error}",
+                    transactionUid, host, port, callingAe, error ?? "unknown");
+            }
         }
         catch (Exception ex)
         {
             DicomLogger.Error("StorageCommitmentSCP", ex, "推送存储承诺事件失败 - Transaction: {TransactionUid}", transactionUid);
-        }
-    }
-
-    private async Task SendEventReportWithRetryAsync(string host, int port, string callingAe, DicomNEventReportRequest request)
-    {
-        var retryCount = Math.Max(1, _settings.StorageCommitmentSCP.PushRetryCount);
-
-        for (var attempt = 1; attempt <= retryCount; attempt++)
-        {
-            try
-            {
-                var client = DicomClientFactory.Create(
-                    host,
-                    port,
-                    false,
-                    _settings.StorageCommitmentSCP.AeTitle,
-                    callingAe);
-
-                using var done = new SemaphoreSlim(0, 1);
-                client.NegotiateAsyncOps();
-
-                request.OnResponseReceived += (req, response) =>
-                {
-                    if (response.Status == DicomStatus.Success)
-                    {
-                        DicomLogger.Information("StorageCommitmentSCP", "收到事件报告响应 - 状态: {Status}", response.Status);
-                    }
-                    else
-                    {
-                        DicomLogger.Warning("StorageCommitmentSCP", "事件报告响应非成功 - 状态: {Status}", response.Status);
-                    }
-                    done.Release();
-                };
-
-                await client.AddRequestAsync(request);
-                await client.SendAsync();
-
-                // 等待响应（避免关联提前释放）
-                await done.WaitAsync(TimeSpan.FromSeconds(10));
-                return;
-            }
-            catch (Exception ex)
-            {
-                DicomLogger.Warning("StorageCommitmentSCP", "推送事件报告失败（第 {Attempt}/{Retry} 次）- 目标: {Host}:{Port}, 错误: {Error}",
-                    attempt, retryCount, host, port, ex.Message);
-                if (attempt == retryCount)
-                {
-                    throw;
-                }
-                await Task.Delay(TimeSpan.FromSeconds(2 * attempt));
-            }
         }
     }
 }

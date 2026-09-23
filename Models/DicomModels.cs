@@ -138,6 +138,14 @@ public enum StorageCommitmentStatus
     FailuresExist
 }
 
+/// <summary>N-EVENT-REPORT 通知投递状态。</summary>
+public enum StorageCommitmentNotificationStatus
+{
+    Pending,
+    Sent,
+    Failed
+}
+
 /// <summary>存储承诺事务记录（对应表 StorageCommitments）。</summary>
 public class StorageCommitmentRecord
 {
@@ -149,6 +157,18 @@ public class StorageCommitmentRecord
     public string? FailedInstances { get; set; }
     public DateTime CreateTime { get; set; } = DateTime.Now;
     public DateTime? CompleteTime { get; set; }
+
+    /// <summary>N-EVENT-REPORT 投递状态（Pending/Sent/Failed）。</summary>
+    public string NotificationStatus { get; set; } = StorageCommitmentNotificationStatus.Pending.ToString();
+    public int NotificationAttempts { get; set; }
+    public string? LastNotificationError { get; set; }
+    /// <summary>N-EVENT-REPORT 目标（用于失败重推）。</summary>
+    public string? RemoteHost { get; set; }
+    public int? RemotePort { get; set; }
+    /// <summary>记录过期时间（TTL）；null 表示不过期。</summary>
+    public DateTime? ExpireTime { get; set; }
+    /// <summary>完整引用实例清单（JSON），用于失败重推重建事件报告。</summary>
+    public string? ReferencedInstances { get; set; }
 }
 
 /// <summary>存储承诺中引用的单个 SOP 实例。</summary>

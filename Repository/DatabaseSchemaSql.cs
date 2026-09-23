@@ -171,6 +171,14 @@ public static class DatabaseSchemaSql
                 TotalCount INTEGER DEFAULT 0,
                 FailedCount INTEGER DEFAULT 0,
                 FailedInstances TEXT,
+                -- 失败可见性/重推支持
+                NotificationStatus TEXT DEFAULT 'PENDING',
+                NotificationAttempts INTEGER DEFAULT 0,
+                LastNotificationError TEXT,
+                RemoteHost TEXT,
+                RemotePort INTEGER,
+                ExpireTime DATETIME,
+                ReferencedInstances TEXT,
                 CreateTime DATETIME,
                 CompleteTime DATETIME
             )";

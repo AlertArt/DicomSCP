@@ -17,6 +17,7 @@ public static class DatabaseSchemaMigrator
         await EnsureStudyRemarkColumnAsync(connection, transaction);
         await EnsureMustChangePasswordColumnAsync(connection, transaction);
         await EnsureSrInstanceColumnsAsync(connection, transaction);
+        await EnsureStorageCommitmentColumnsAsync(connection, transaction);
     }
 
     private static async Task EnsureStudyRemarkColumnAsync(SqliteConnection connection, IDbTransaction? transaction)
@@ -89,6 +90,36 @@ public static class DatabaseSchemaMigrator
             {
                 await connection.ExecuteAsync(
                     $"ALTER TABLE Instances ADD COLUMN {name} {type}",
+                    transaction: transaction);
+            }
+        }
+    }
+
+    /// <summary>为历史库补齐 StorageCommitments 表的失败可见性/重推字段。</summary>
+    private static async Task EnsureStorageCommitmentColumnsAsync(SqliteConnection connection, IDbTransaction? transaction)
+    {
+        var columns = new (string Name, string Definition)[]
+        {
+            ("NotificationStatus", "TEXT DEFAULT 'PENDING'"),
+            ("NotificationAttempts", "INTEGER DEFAULT 0"),
+            ("LastNotificationError", "TEXT"),
+            ("RemoteHost", "TEXT"),
+            ("RemotePort", "INTEGER"),
+            ("ExpireTime", "DATETIME"),
+            ("ReferencedInstances", "TEXT"),
+        };
+
+        foreach (var (name, definition) in columns)
+        {
+            var exists = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM pragma_table_info('StorageCommitments') WHERE name = @Name",
+                new { Name = name },
+                transaction: transaction);
+
+            if (exists == 0)
+            {
+                await connection.ExecuteAsync(
+                    $"ALTER TABLE StorageCommitments ADD COLUMN {name} {definition}",
                     transaction: transaction);
             }
         }

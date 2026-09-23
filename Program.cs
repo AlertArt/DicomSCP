@@ -269,6 +269,21 @@ CStoreSCP.Configure(settings, dicomPersistence);
 // 启动前重放失败队列：将上次运行落盘的失败入库记录重新入库
 await dicomPersistence.TryReplayFailedQueueAsync(settings.StoragePath);
 
+// 启动时清理过期的存储承诺记录（TTL），避免历史记录无限增长
+try
+{
+    var commitmentRepository = app.Services.GetRequiredService<StorageCommitmentRepository>();
+    var purged = await commitmentRepository.PurgeExpiredAsync(DateTime.Now);
+    if (purged > 0)
+    {
+        DicomLogger.Information("StorageCommitment", "启动清理过期存储承诺记录 - 删除: {Count}", purged);
+    }
+}
+catch (Exception ex)
+{
+    DicomLogger.Error("StorageCommitment", ex, "启动清理过期存储承诺记录失败");
+}
+
 // 启动 DICOM 服务器
 var dicomServer = app.Services.GetRequiredService<DicomServer>();
 await dicomServer.StartAsync();

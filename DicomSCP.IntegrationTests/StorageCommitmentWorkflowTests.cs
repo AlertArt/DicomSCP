@@ -1,3 +1,4 @@
+using System.Net;
 using FellowOakDicom;
 using FellowOakDicom.Network;
 using Xunit;
@@ -85,5 +86,75 @@ public class StorageCommitmentWorkflowTests
                 Directory.Delete(Path.GetDirectoryName(filePath)!, recursive: true);
             }
         }
+    }
+
+    [Fact]
+    public async Task NAction_MissingInstance_IsVisibleAsFailureAndRepushable()
+    {
+        var transactionUid = DicomUIDGenerator.GenerateDerivedFromUUID().UID;
+        var missingSop = DicomUIDGenerator.GenerateDerivedFromUUID().UID;
+
+        var referenced = new DicomDataset
+        {
+            { DicomTag.ReferencedSOPClassUID, DicomUID.CTImageStorage.UID },
+            { DicomTag.ReferencedSOPInstanceUID, missingSop }
+        };
+        var seq = new DicomSequence(DicomTag.ReferencedSOPSequence);
+        seq.Items.Add(referenced);
+        var nActionDataset = new DicomDataset
+        {
+            { DicomTag.TransactionUID, transactionUid },
+            seq
+        };
+
+        DicomStatus? actionStatus = null;
+        var commit = _fx.CreateClient(E2EFixture.CommitmentPort, "STORECOMMITSCP");
+        var nAction = new DicomNActionRequest(
+            DicomUID.StorageCommitmentPushModel,
+            DicomUID.StorageCommitmentPushModelInstance,
+            1)
+        {
+            Dataset = nActionDataset
+        };
+        nAction.OnResponseReceived += (_, r) => actionStatus = r.Status;
+        await commit.AddRequestAsync(nAction);
+        await commit.SendAsync();
+        Assert.Equal(DicomStatus.Success, actionStatus);
+
+        // 失败事务被持久化（绝不静默丢失）
+        var persisted = await _fx.WaitForAsync(async () =>
+            await _fx.QueryScalarAsync<string>(
+                "SELECT Status FROM StorageCommitments WHERE TransactionUid = @t", new { t = transactionUid })
+            == "FailuresExist", 20000);
+        Assert.True(persisted, "failed storage commitment was not persisted");
+
+        // 详情 API 可见失败实例
+        using (var detail = await _fx.Http.GetAsync($"/api/StorageCommitment/{transactionUid}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+            var body = await detail.Content.ReadAsStringAsync();
+            Assert.Contains("FailuresExist", body);
+            Assert.Contains(missingSop, body);
+        }
+
+        // 列表 API 按状态过滤可见
+        using (var list = await _fx.Http.GetAsync("/api/StorageCommitment?status=FailuresExist"))
+        {
+            Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+            Assert.Contains(transactionUid, await list.Content.ReadAsStringAsync());
+        }
+
+        // 重推（目标不可达 → sent=false，接口可用并记录通知结果）
+        using (var repush = await _fx.Http.PostAsync($"/api/StorageCommitment/{transactionUid}/repush", null))
+        {
+            Assert.Equal(HttpStatusCode.OK, repush.StatusCode);
+            var body = await repush.Content.ReadAsStringAsync();
+            Assert.Contains("\"sent\":false", body);
+        }
+
+        // 重推后通知尝试次数被记录
+        var attempts = await _fx.QueryScalarAsync<int>(
+            "SELECT NotificationAttempts FROM StorageCommitments WHERE TransactionUid = @t", new { t = transactionUid });
+        Assert.True(attempts >= 1, $"notification attempts not recorded (got {attempts})");
     }
 }

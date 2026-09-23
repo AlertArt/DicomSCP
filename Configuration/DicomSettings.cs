@@ -118,6 +118,10 @@ public class StorageCommitmentSCPSettings
 
     /// <summary>推送 N-EVENT-REPORT 时使用的重连尝试次数（默认 3 次）。</summary>
     public int PushRetryCount { get; set; } = 3;
+
+    /// <summary>存储承诺记录保留天数（TTL，默认 30 天）；0 表示不过期。</summary>
+    [Range(0, 3650)]
+    public int RecordTtlDays { get; set; } = 30;
 }
 
 public class MppsSCPSettings
