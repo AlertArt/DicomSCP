@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 using System.Text;
 
 namespace DicomSCP.Controllers;
@@ -248,6 +249,47 @@ public class DicomWebController(
         }
     }
 
+    [HttpGet("studies/{study}/series/{series}/instances/{instance}/thumbnail")]
+    public async Task<IActionResult> RetrieveThumbnail(string study, string series, string instance, [FromQuery] int? size = null)
+    {
+        try
+        {
+            var dbInstance = await _repository.GetInstanceAsync(instance);
+            if (dbInstance == null)
+            {
+                return NotFound("Instance not found");
+            }
+
+            var filePath = Path.Combine(_settings.StoragePath, dbInstance.FilePath);
+            if (!System.IO.File.Exists(filePath))
+            {
+                return NotFound("DICOM file not found");
+            }
+
+            var dicomFile = await DicomFile.OpenAsync(filePath);
+            if (!dicomFile.Dataset.Contains(DicomTag.PixelData))
+            {
+                DicomLogger.Warning("DICOMweb", "实例无像素数据，无法生成缩略图 - Instance: {Instance}", instance);
+                return StatusCode(StatusCodes.Status415UnsupportedMediaType,
+                    "Instance has no pixel data; thumbnail is not supported");
+            }
+
+            var maxSize = size.GetValueOrDefault(128);
+            if (maxSize < 1 || maxSize > 1024)
+            {
+                maxSize = 128;
+            }
+
+            var bytes = await RenderThumbnailAsync(dicomFile.Dataset, maxSize);
+            return File(bytes, DicomWebHelpers.JpegContentType);
+        }
+        catch (Exception ex)
+        {
+            DicomLogger.Error("DICOMweb", ex, "WADO-RS 缩略图生成失败 - Instance: {Instance}", instance);
+            return StatusCode(500, "Thumbnail generation failed");
+        }
+    }
+
     [HttpGet("studies/{study}/series/{series}/instances/{instance}/frames/{frames}")]
     public async Task<IActionResult> RetrieveFrames(string study, string series, string instance, string frames, [FromQuery] string transferSyntax = "")
     {
@@ -302,7 +344,7 @@ public class DicomWebController(
 
             var boundary = $"dicomweb-{Guid.NewGuid():N}";
             var body = BuildMultipartRelated(parts, boundary);
-            return File(body, $"{DicomWebHelpers.MultipartRelated}; type={DicomWebHelpers.OctetStreamContentType}; boundary={boundary}");
+            return File(body, $"{DicomWebHelpers.MultipartRelated}; type=\"{DicomWebHelpers.OctetStreamContentType}\"; boundary={boundary}");
         }
         catch (Exception ex)
         {
@@ -412,7 +454,7 @@ public class DicomWebController(
 
             var boundary = $"dicomweb-{Guid.NewGuid():N}";
             var body = BuildMultipartRelated(parts, boundary);
-            return File(body, $"{DicomWebHelpers.MultipartRelated}; type={DicomWebHelpers.DicomContentType}; boundary={boundary}");
+            return File(body, $"{DicomWebHelpers.MultipartRelated}; type=\"{DicomWebHelpers.DicomContentType}\"; boundary={boundary}");
         }
         catch (Exception ex)
         {
@@ -600,6 +642,25 @@ public class DicomWebController(
             await image.SaveAsJpegAsync(ms, new JpegEncoder { Quality = 90 });
         }
 
+        return ms.ToArray();
+    }
+
+    /// <summary>将首帧渲染并缩放到最大边长 maxSize 的 JPEG 缩略图。</summary>
+    private async Task<byte[]> RenderThumbnailAsync(DicomDataset dataset, int maxSize)
+    {
+        var dicomImage = new DicomImage(dataset, 0);
+        var renderedImage = dicomImage.RenderImage();
+        using var image = Image.LoadPixelData<Rgba32>(
+            renderedImage.AsBytes(), renderedImage.Width, renderedImage.Height);
+
+        image.Mutate(x => x.Resize(new ResizeOptions
+        {
+            Mode = ResizeMode.Max,
+            Size = new Size(maxSize, maxSize)
+        }));
+
+        using var ms = new MemoryStream();
+        await image.SaveAsJpegAsync(ms, new JpegEncoder { Quality = 85 });
         return ms.ToArray();
     }
 
