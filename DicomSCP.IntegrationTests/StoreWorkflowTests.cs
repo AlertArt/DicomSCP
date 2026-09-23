@@ -94,6 +94,12 @@ public class StoreWorkflowTests
             Assert.True(thumb.IsSuccessStatusCode, $"WADO-RS thumbnail failed: {(int)thumb.StatusCode}");
             Assert.Equal("image/jpeg", thumb.Content.Headers.ContentType?.MediaType);
             Assert.True((await thumb.Content.ReadAsByteArrayAsync()).Length > 0, "thumbnail body is empty");
+
+            // WADO-RS 帧端点：OHIF 像素加载使用
+            var frames = await _fx.Http.GetAsync($"/dicomweb/studies/{studyUid}/series/{seriesUid}/instances/{sopUid}/frames/1");
+            Assert.True(frames.IsSuccessStatusCode, $"WADO-RS frames failed: {(int)frames.StatusCode}");
+            Assert.Equal("multipart/related", frames.Content.Headers.ContentType?.MediaType);
+            Assert.True((await frames.Content.ReadAsByteArrayAsync()).Length > 0, "frames body is empty");
         }
         finally
         {
