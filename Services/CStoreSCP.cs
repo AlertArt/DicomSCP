@@ -515,6 +515,8 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
         string? tempFilePath = null;
         try
         {
+            DicomMetrics.Increment(DicomMetrics.CStoreReceived);
+
             // 记录基本信息
             DicomLogger.Debug("StoreSCP", 
                 "接收DICOM文件 - 患者ID: {PatientId}, 研究: {StudyId}, 序列: {SeriesId}, 实例: {InstanceUid}",
@@ -525,6 +527,7 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
 
             if (_disposed)
             {
+                DicomMetrics.Increment(DicomMetrics.CStoreFailure);
                 return new DicomCStoreResponse(request, DicomStatus.ProcessingFailure);
             }
 
@@ -535,6 +538,7 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
                 var validationResult = ValidateKeyDicomTags(request.Dataset);
                 if (!validationResult.IsValid)
                 {
+                    DicomMetrics.Increment(DicomMetrics.CStoreFailure);
                     return new DicomCStoreResponse(request, DicomStatus.InvalidAttributeValue);
                 }
 
@@ -602,6 +606,7 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
                     {
                         DicomLogger.Warning("StoreSCP", "检测到重复图像 - 路径: {FilePath}", targetFilePath);
                         File.Delete(tempFilePath);
+                        DicomMetrics.Increment(DicomMetrics.CStoreDuplicate);
                         return new DicomCStoreResponse(request, DicomStatus.DuplicateSOPInstance);
                     }
 
@@ -637,6 +642,7 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
                         }
                     }
 
+                    DicomMetrics.Increment(DicomMetrics.CStoreSuccess);
                     return new DicomCStoreResponse(request, DicomStatus.Success);
                 }
                 finally
@@ -736,6 +742,7 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
 
     public Task OnCStoreRequestExceptionAsync(string tempFileName, Exception e)
     {
+        DicomMetrics.Increment(DicomMetrics.CStoreFailure);
         DicomLogger.Error("StoreSCP", e, "处理 C-STORE 请求异常 - 临时文件: {TempFile}", tempFileName);
         return Task.CompletedTask;
     }

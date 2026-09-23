@@ -146,6 +146,7 @@ public sealed class DicomDatasetPersistence : IDisposable
     public async Task SaveDicomDataAsync(DicomDataset dataset, string filePath)
     {
         _dataQueue.Enqueue(new QueueItem { Dataset = dataset, FilePath = filePath });
+        DicomMetrics.SetGauge(DicomMetrics.DbQueueDepth, _dataQueue.Count);
 
         // 当队列达到批处理的80%时，主动触发处理
         if (_dataQueue.Count >= _batchSize * 0.8)
@@ -255,6 +256,9 @@ public sealed class DicomDatasetPersistence : IDisposable
                 _performanceTimer.Stop();
                 _lastProcessTime = DateTime.Now;
 
+                DicomMetrics.Increment(DicomMetrics.DbBatchProcessed);
+                DicomMetrics.SetGauge(DicomMetrics.DbQueueDepth, _dataQueue.Count);
+
                 DicomLogger.Information(
                     "Database",
                     "[DB] 批量处理完成 - 总数: {Count}, 新增: P={Patients}, S={Studies}, Se={Series}, I={Instances}, 耗时: {Time}ms, 队列剩余: {Remaining}",
@@ -269,6 +273,7 @@ public sealed class DicomDatasetPersistence : IDisposable
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
+                DicomMetrics.Increment(DicomMetrics.DbInsertFailure);
                 DicomLogger.Error("Database", ex, "[DB] 数据库操作失败 - 批次大小: {Count}", batchItems.Count);
 
                 // 失败批次自动重试（带上限），超限后落盘到失败队列目录，避免数据丢失
@@ -278,6 +283,7 @@ public sealed class DicomDatasetPersistence : IDisposable
                     {
                         item.RetryCount++;
                         _dataQueue.Enqueue(item);
+                        DicomMetrics.Increment(DicomMetrics.DbRetry);
                         DicomLogger.Warning("Database",
                             "[DB] 数据入库失败，重新入队 - 文件: {FilePath}, 第 {RetryCount}/{MaxRetry} 次重试",
                             item.FilePath, item.RetryCount, _maxRetryCount);

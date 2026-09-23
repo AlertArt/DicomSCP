@@ -198,6 +198,7 @@ public partial class QRSCP : DicomService, IDicomServiceProvider, IDicomCEchoPro
 
     public async IAsyncEnumerable<DicomCFindResponse> OnCFindRequestAsync(DicomCFindRequest request)
     {
+        DicomMetrics.Increment(DicomMetrics.CFind);
         DicomLogger.Information("QRSCP", "收到 C-FIND 请求 - 来自: {CallingAE}, 级别: {Level}", 
             Association.CallingAE, request.Level);
 

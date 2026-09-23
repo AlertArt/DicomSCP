@@ -14,6 +14,7 @@ public partial class QRSCP
 {
     public async IAsyncEnumerable<DicomCGetResponse> OnCGetRequestAsync(DicomCGetRequest request)
     {
+        DicomMetrics.Increment(DicomMetrics.CGet);
         DicomLogger.Information("QRSCP", "收到C-GET请求 - AE: {CallingAE}, 级别: {Level}", 
             Association.CallingAE, request.Level);
 

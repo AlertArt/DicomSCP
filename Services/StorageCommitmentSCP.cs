@@ -158,6 +158,7 @@ public class StorageCommitmentSCP : DicomService, IDicomServiceProvider, IDicomN
     {
         try
         {
+            DicomMetrics.Increment(DicomMetrics.StorageCommitRequest);
             if (request.SOPClassUID != DicomUID.StorageCommitmentPushModel)
             {
                 DicomLogger.Warning("StorageCommitmentSCP", "不支持的 SOP Class: {SopClass}", request.SOPClassUID?.Name ?? "Unknown");
@@ -193,6 +194,10 @@ public class StorageCommitmentSCP : DicomService, IDicomServiceProvider, IDicomN
             }
 
             var failed = referenced.Where(r => !r.Verified).ToList();
+            if (failed.Count > 0)
+            {
+                DicomMetrics.Increment(DicomMetrics.StorageCommitFailure);
+            }
 
             // 持久化承诺事务记录
             var record = new StorageCommitmentRecord
@@ -360,6 +365,7 @@ public class StorageCommitmentSCP : DicomService, IDicomServiceProvider, IDicomN
             }
             else
             {
+                DicomMetrics.Increment(DicomMetrics.StorageCommitNotificationFailed);
                 DicomLogger.Error("StorageCommitmentSCP", null,
                     "存储承诺事件推送失败（已记录，可重推）- Transaction: {TransactionUid}, 目标: {Host}:{Port} {Ae}, 错误: {Error}",
                     transactionUid, host, port, callingAe, error ?? "unknown");

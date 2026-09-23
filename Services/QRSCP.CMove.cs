@@ -14,6 +14,7 @@ public partial class QRSCP
 {
     public async IAsyncEnumerable<DicomCMoveResponse> OnCMoveRequestAsync(DicomCMoveRequest request)
     {
+        DicomMetrics.Increment(DicomMetrics.CMove);
         var destinationAE = request.DestinationAE;
 
         // 检查目标 AE 是否正在处理中
