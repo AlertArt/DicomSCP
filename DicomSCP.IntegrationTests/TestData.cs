@@ -7,9 +7,14 @@ namespace DicomSCP.IntegrationTests;
 
 public static class TestData
 {
-    public static (string FilePath, string SopUid, string StudyUid, string SeriesUid) CreateMinimalImage()
+    public static (string FilePath, string SopUid, string StudyUid, string SeriesUid) CreateMinimalImage(
+        string? patientId = null,
+        string? studyUid = null,
+        string? accessionNumber = null)
     {
-        var study = DicomUIDGenerator.GenerateDerivedFromUUID();
+        var study = string.IsNullOrEmpty(studyUid)
+            ? DicomUIDGenerator.GenerateDerivedFromUUID()
+            : new DicomUID(studyUid, "Study", DicomUidType.Unknown);
         var series = DicomUIDGenerator.GenerateDerivedFromUUID();
         var sop = DicomUIDGenerator.GenerateDerivedFromUUID();
 
@@ -22,14 +27,14 @@ public static class TestData
             { DicomTag.SeriesNumber, 1 },
             { DicomTag.InstanceNumber, 1 },
             { DicomTag.Modality, "CT" },
-            { DicomTag.PatientID, "E2E-PAT-001" },
+            { DicomTag.PatientID, patientId ?? "E2E-PAT-001" },
             { DicomTag.PatientName, "E2E^Check" },
             { DicomTag.PatientBirthDate, "19900101" },
             { DicomTag.PatientSex, "M" },
             { DicomTag.StudyDate, "20240101" },
             { DicomTag.StudyTime, "120000" },
             { DicomTag.StudyID, "E2E-STUDY" },
-            { DicomTag.AccessionNumber, "E2E-ACC-001" },
+            { DicomTag.AccessionNumber, accessionNumber ?? "E2E-ACC-001" },
             { DicomTag.StudyDescription, "E2E Study" },
             { DicomTag.SeriesDescription, "E2E Series" },
             { DicomTag.Rows, (ushort)8 },
