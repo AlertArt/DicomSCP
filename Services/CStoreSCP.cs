@@ -125,6 +125,11 @@ public class CStoreSCP : DicomService, IDicomServiceProvider, IDicomCStoreProvid
                     // 显式接受 SR SOP 类，不依赖 fo-dicom 运行时的 StorageCategory 归类
                     pc.AcceptTransferSyntaxes(_acceptedTransferSyntaxes);
                 }
+                else if (RadiotherapySupport.IsRadiotherapy(pc.AbstractSyntax))  // 放射治疗对象 (RT)
+                {
+                    // 显式接受 RT SOP 类（RTSTRUCT/RTDOSE/RTPlan 等），不依赖 StorageCategory 归类
+                    pc.AcceptTransferSyntaxes(_acceptedImageTransferSyntaxes.Concat(_acceptedTransferSyntaxes).Distinct().ToArray());
+                }
                 else if (pc.AbstractSyntax.StorageCategory != DicomStorageCategory.None)  // 其他存储
                 {
                     pc.AcceptTransferSyntaxes(_acceptedTransferSyntaxes);

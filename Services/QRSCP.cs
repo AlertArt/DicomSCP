@@ -93,25 +93,33 @@ public partial class QRSCP : DicomService, IDicomServiceProvider, IDicomCEchoPro
                     pc.AbstractSyntax == DicomUID.StudyRootQueryRetrieveInformationModelGet ||  // C-GET
                     pc.AbstractSyntax == DicomUID.PatientRootQueryRetrieveInformationModelGet || // C-GET (Patient Root)
                     pc.AbstractSyntax.StorageCategory != DicomStorageCategory.None ||           // Storage (for C-GET)
-                    SrSupport.IsStructuredReport(pc.AbstractSyntax.UID))                        // SR Storage (for C-GET)
+                    SrSupport.IsStructuredReport(pc.AbstractSyntax.UID) ||                      // SR Storage (for C-GET)
+                    RadiotherapySupport.IsRadiotherapy(pc.AbstractSyntax.UID))                  // RT Storage (for C-GET)
                 {
+                    var isStorageObject = pc.AbstractSyntax.StorageCategory != DicomStorageCategory.None;
+                    var isSr = SrSupport.IsStructuredReport(pc.AbstractSyntax.UID);
+                    var isRt = RadiotherapySupport.IsRadiotherapy(pc.AbstractSyntax.UID);
+
                     // 记录服务接受日志
-                    if (pc.AbstractSyntax.StorageCategory == DicomStorageCategory.None &&
-                        !SrSupport.IsStructuredReport(pc.AbstractSyntax.UID))
+                    if (!isStorageObject && !isSr && !isRt)
                     {
                         DicomLogger.Information("QRSCP", "接受服务 - AET: {CallingAE}, 服务: {Service}", 
                             association.CallingAE, pc.AbstractSyntax.Name);
                     }
 
                     // 根据服务类型选择合适的传输语法
-                    if (pc.AbstractSyntax.StorageCategory != DicomStorageCategory.None ||
-                        SrSupport.IsStructuredReport(pc.AbstractSyntax.UID))
+                    if (isRt)
                     {
-                        // 对于存储类服务（C-GET需要），接受图像/基本传输语法
-                        pc.AcceptTransferSyntaxes(
-                            SrSupport.IsStructuredReport(pc.AbstractSyntax.UID)
-                                ? AcceptedTransferSyntaxes
-                                : AcceptedImageTransferSyntaxes);
+                        // 对于 RT 存储类服务（C-GET需要），接受图像与基本传输语法
+                        pc.AcceptTransferSyntaxes(AcceptedImageTransferSyntaxes.Concat(AcceptedTransferSyntaxes).Distinct().ToArray());
+                    }
+                    else if (isStorageObject)
+                    {
+                        pc.AcceptTransferSyntaxes(AcceptedImageTransferSyntaxes);
+                    }
+                    else if (isSr)
+                    {
+                        pc.AcceptTransferSyntaxes(AcceptedTransferSyntaxes);
                     }
                     else if (pc.AbstractSyntax == DicomUID.StudyRootQueryRetrieveInformationModelGet ||
                              pc.AbstractSyntax == DicomUID.PatientRootQueryRetrieveInformationModelGet ||

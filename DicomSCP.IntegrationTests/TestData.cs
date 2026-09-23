@@ -136,6 +136,60 @@ public static class TestData
         };
     }
 
+    /// <summary>构造最小 RT Structure Set（无像素）。</summary>
+    public static DicomDataset CreateMinimalRtStruct(string studyUid, string seriesUid, string sopUid)
+    {
+        return new DicomDataset
+        {
+            { DicomTag.SOPClassUID, DicomUID.RTStructureSetStorage },
+            { DicomTag.SOPInstanceUID, sopUid },
+            { DicomTag.StudyInstanceUID, studyUid },
+            { DicomTag.SeriesInstanceUID, seriesUid },
+            { DicomTag.Modality, "RTSTRUCT" },
+            { DicomTag.SeriesNumber, 1 },
+            { DicomTag.InstanceNumber, 1 },
+            { DicomTag.PatientID, "E2E-RT-001" },
+            { DicomTag.PatientName, "E2E^RT" },
+            { DicomTag.StudyDate, "20240101" },
+            { DicomTag.StudyTime, "120000" },
+            { DicomTag.StructureSetLabel, "E2E-STRUCT" },
+            { DicomTag.StructureSetDate, "20240101" },
+            { DicomTag.StructureSetTime, "120000" }
+        };
+    }
+
+    /// <summary>构造最小 RT Dose（含像素栅格）。</summary>
+    public static DicomDataset CreateMinimalRtDose(string studyUid, string seriesUid, string sopUid)
+    {
+        var ds = new DicomDataset
+        {
+            { DicomTag.SOPClassUID, DicomUID.RTDoseStorage },
+            { DicomTag.SOPInstanceUID, sopUid },
+            { DicomTag.StudyInstanceUID, studyUid },
+            { DicomTag.SeriesInstanceUID, seriesUid },
+            { DicomTag.Modality, "RTDOSE" },
+            { DicomTag.SeriesNumber, 1 },
+            { DicomTag.InstanceNumber, 1 },
+            { DicomTag.PatientID, "E2E-RT-001" },
+            { DicomTag.PatientName, "E2E^RT" },
+            { DicomTag.StudyDate, "20240101" },
+            { DicomTag.StudyTime, "120000" },
+            { DicomTag.DoseUnits, "GY" },
+            { DicomTag.DoseType, "PHYSICAL" },
+            { DicomTag.Rows, (ushort)8 },
+            { DicomTag.Columns, (ushort)8 },
+            { DicomTag.BitsAllocated, (ushort)16 },
+            { DicomTag.BitsStored, (ushort)16 },
+            { DicomTag.HighBit, (ushort)15 },
+            { DicomTag.PixelRepresentation, (ushort)0 },
+            { DicomTag.SamplesPerPixel, (ushort)1 },
+            { DicomTag.PhotometricInterpretation, "MONOCHROME2" }
+        };
+        var pixels = DicomPixelData.Create(ds, true);
+        pixels.AddFrame(new MemoryByteBuffer(new byte[8 * 8 * 2]));
+        return ds;
+    }
+
     public static DicomDataset CreateMpps(ushort statusCode, string mppsUid, string studyUid)    {
         var scheduled = new DicomSequence(DicomTag.ScheduledStepAttributesSequence);
         scheduled.Items.Add(new DicomDataset
