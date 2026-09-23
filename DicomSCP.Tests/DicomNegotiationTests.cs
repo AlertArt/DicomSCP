@@ -36,6 +36,52 @@ public class DicomNegotiationTests
     }
 
     [Fact]
+    public void SupportedImageSyntaxes_IncludeJpeg2000AndJpegLs()
+    {
+        var supported = DicomNegotiation.SupportedImageStorageSyntaxes;
+
+        Assert.Contains(DicomTransferSyntax.JPEG2000Lossless, supported);
+        Assert.Contains(DicomTransferSyntax.JPEGLSLossless, supported);
+        // 兜底基础语法存在
+        Assert.Contains(DicomTransferSyntax.ImplicitVRLittleEndian, supported);
+    }
+
+    [Theory]
+    [InlineData("1.2.840.10008.1.2.4.90")] // JPEG 2000 Lossless
+    [InlineData("1.2.840.10008.1.2.4.80")] // JPEG-LS Lossless
+    public void SelectBestMatch_AcceptsJpeg2000AndJpegLs(string syntaxUid)
+    {
+        var offered = new[] { DicomTransferSyntax.Parse(syntaxUid) };
+        var supported = DicomNegotiation.SupportedImageStorageSyntaxes;
+
+        var best = DicomNegotiation.SelectBestMatch(offered, supported);
+
+        Assert.NotNull(best);
+        Assert.Equal(syntaxUid, best!.UID.UID);
+    }
+
+    [Fact]
+    public void SelectBestMatch_FallsBackToImplicitVrLittleEndian()
+    {
+        // 对端只提议本端不支持的语法时，无交集 -> 由调用方回退（返回 null）
+        var offered = new[]
+        {
+            DicomTransferSyntax.DeflatedExplicitVRLittleEndian,
+            DicomTransferSyntax.JPEGProcess14
+        };
+        Assert.Null(DicomNegotiation.SelectBestMatch(offered, DicomNegotiation.SupportedImageStorageSyntaxes));
+
+        // 对端同时提供隐式 VR，小端时选取该兜底语法
+        var offeredWithFallback = new[]
+        {
+            DicomTransferSyntax.DeflatedExplicitVRLittleEndian,
+            DicomTransferSyntax.ImplicitVRLittleEndian
+        };
+        var best = DicomNegotiation.SelectBestMatch(offeredWithFallback, DicomNegotiation.SupportedImageStorageSyntaxes);
+        Assert.Equal(DicomTransferSyntax.ImplicitVRLittleEndian, best);
+    }
+
+    [Fact]
     public void ComputeMissing_FromEmpty_AssignsOddIdsAscending()
     {
         var sopClasses = new[]
