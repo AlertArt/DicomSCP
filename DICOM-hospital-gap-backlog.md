@@ -1,9 +1,8 @@
 # DICOM Service - Hospital Integration Gap Table + Executable Backlog
 
 > Source of truth: authoritative source tree (QRSCP split into QRSCP.cs skeleton +
-> CFind/CMove/CGet/CStore/Transfer partials), 112 automated tests all green
-> (incl. real-SCU end-to-end drills), multi-round Authentic-Verify snapshots.
-> Generated: this session. ASCII-safe.
+> CFind/CMove/CGet/CStore/Transfer partials), 163 unit + 40 integration tests all green
+> (incl. real-SCU end-to-end drills). Updated this cycle. ASCII-safe.
 
 ## Legend
   [x] done         [~] partial       [ ] missing/planned
@@ -12,75 +11,74 @@
 
 ## A) Gap table vs. typical hospital integration requests
 
-| # | Hospital requirement            | St | Evidence (code/history)                                  | Clinical meaning                                  | Gap / action                                              |
+| # | Hospital requirement            | St | Evidence (code/tests)                                    | Clinical meaning                                  | Gap / action                                              |
 |---|---------------------------------|----|----------------------------------------------------------|--------------------------------------------------|------------------------------------------------------------|
 | 1 | Accept images from modalities   | [x] | C-STORE SCP/SCU (CStore partial)                         | CT/MR/US modalities push studies disk-off         | -                                                          |
-| 2 | Lost-transport resilience       | [x] | failed_queue -> retry on startup; throwOnError semantics | No image loss on network drop                     | + failed queue TTL/dead-letter cap                        |
-| 3 | Modality Worklist               | [x] | MWL SCU C-FIND over REST (af55e03)                       | Tech pulls scheduled orders, avoids typos         | -                                                          |
+| 2 | Lost-transport resilience       | [x] | failed_queue -> retry on startup; throwOnError semantics | No image loss on network drop                     | B2 dead-letter/TTL for commit queue (done)                |
+| 3 | Modality Worklist               | [x] | MWL SCU C-FIND over REST                                 | Tech pulls scheduled orders, avoids typos         | -                                                          |
 | 4 | Query/Retrieve (QRSCP)          | [x] | C-FIND 4 levels + C-MOVE/C-GET partials                  | Studies retrievable by patient/study/series/image  | -                                                          |
-| 5 | Storage Commitment             | [x] | N-ACTION persist + N-EVENT-REPORT push (a3b853c)         | Modality may delete local after confirmed archive  | -                                                          |
-| 6 | MPPS                           | [x] | SCP for modality performed step (a0e46dd)                | Track imaging start/end, feeding RIS               | -                                                          |
-| 7 | UPS (worklists for DICOM apps) | [x] | UPS SCP N-CREATE/GET/SET/DELETE + subscribe (1d04b18)    | Third-party DICOM apps get work items              | -                                                          |
-| 8 | Web viewing (WADO-RS)          | [x] | DICOMweb full endpoints (abc4ed5)                        | Any-browser image access                           | -                                                          |
-| 9 | Web auth for retrieval         | [x] | dicomweb/wado/viewer behind auth (a75c570)               | Protected access                                   | -                                                          |
-|10 | Login hardening                | [x] | PBKDF2 + LoginAttemptLimiter (acct+IP) (02df058/2fa911e) | Brute-force / account-lockout protection           | -                                                          |
-|11 | AE-title / context control     | [x] | AssociationGuard (9f5bab0), AE title+app-context check   | Only trusted modalities may connect                | -                                                          |
-|12 | Workflow: MWL-vs-Order, UPS    | [~] | MWL + UPS + MPPS present, CPS/Performed PS orchestration| Full IHE SWF/MWF requires RIS-side integration     | Build SWF profile walk-through test                       |
-|13 | Structured Reports (SR)        | [ ] | -                                                        | Radiologist report/summary as DICOM SR             | Add SR SOP class (C-STORE + storage)                      |
-|14 | Radiotherapy (RT)              | [ ] | -                                                        | RT dose/plan/RTSTRUCT                              | Add RT series support or defer                          |
-|15 | Presentation/Print             | [~] | PrintSCU basic, deadlock fix                             | Camera/film printing                               | Full Basic Grayscale Print SCP                          |
-|16 | Key Object Selection/Ref       | [ ] | -                                                        | Mark key images                                    | Add KOS SOP class                                        |
-|17 | Real multidevice concurrency   | [~] | only single static DICOM client                          | 100s modalities pushing simultaneously             | Shared client pool + backpressure, load-test report       |
-|18 | Transcode robustness           | [~] | TransferSyntax negotiation + transcode-if-needed        | JPEG/JPEG-LS/JPEG2000 inbound                       | Verify codec coverage + add JPEG2000/JPEG-LS tests        |
-|19 | Diagnostics workstation        | [ ] | -                                                        | Reading/report/print is a separate (non-PACS)      | Out of scope (needs RIS/PACS + viewer product)            |
-|20 | Ops observability              | [~] | logs, retries, queues, DB migrations/WAL                | Find "why did X fail" quickly                      | Add metrics endpoint + alerting budget                   |
+| 5 | Storage Commitment             | [x] | N-ACTION persist + N-EVENT-REPORT push; B2 visibility   | Modality may delete local after confirmed archive  | -                                                          |
+| 6 | MPPS                           | [x] | SCP for modality performed step                          | Track imaging start/end, feeding RIS               | -                                                          |
+| 7 | UPS (worklists for DICOM apps) | [x] | UPS SCP N-CREATE/GET/SET/DELETE + subscribe              | Third-party DICOM apps get work items              | -                                                          |
+| 8 | Web viewing (WADO-RS)          | [x] | DICOMweb QIDO/WADO/STOW + metadata/frames/rendered/thumb | Any-browser image access                           | -                                                          |
+| 9 | Web auth for retrieval         | [x] | dicomweb/wado/viewer behind auth (AuthProtectionTests)   | Protected access                                   | -                                                          |
+|10 | Login hardening                | [x] | PBKDF2 + LoginAttemptLimiter (acct+IP)                   | Brute-force / account-lockout protection           | -                                                          |
+|11 | AE-title / context control     | [x] | AssociationGuard (AE title + app-context check)          | Only trusted modalities may connect                | -                                                          |
+|12 | Workflow: MWL-vs-Order, UPS    | [x] | IheSwfWorkflowTests (MWL->MPPS->C-STORE->QR)             | Full order-to-archive flow                         | RIS-side orchestration remains external                   |
+|13 | Structured Reports (SR)        | [x] | SR store/validate/content/references/KOS/generate + GET  | Radiologist report/summary as DICOM SR             | -                                                          |
+|14 | Radiotherapy (RT)              | [x] | RadiotherapySupport whitelist + RtWorkflowTests          | RT dose/plan/RTSTRUCT stored, listed, retrievable  | -                                                          |
+|15 | Presentation/Print             | [x] | PrintSCP (film session/box/image box) + PrintWorkflowTests| Camera/film printing                              | -                                                          |
+|16 | Key Object Selection/Ref       | [x] | KOS SOP + /api/Sr/key-objects + reference links          | Mark key images                                    | -                                                          |
+|17 | Real multidevice concurrency   | [x] | ConcurrencyLoadTests (8/16/32 concurrent C-STORE)        | 100s modalities pushing simultaneously             | -                                                          |
+|18 | Transcode robustness           | [x] | TranscodeTests + DicomNegotiationTests (JPEG2000/JPEG-LS)| JPEG/JPEG-LS/JPEG2000 inbound                      | -                                                          |
+|19 | Diagnostics workstation        | [ ] | OHIF bundled viewer (local /dicomweb)                    | Reading/report/print is a separate product         | Out of scope (needs RIS/PACS + viewer product)            |
+|20 | Ops observability              | [x] | DicomMetrics + /api/Metrics + /api/Metrics/summary + /health | Find "why did X fail" quickly              | -                                                          |
 
-Summary: core retrieval/storage/workflow/web is production-shape for routine
-radiology; gaps concentrate in SR/RT/KOS/Print SCP (specialist), a shared
-client pool + load-test for concurrency, and a metrics/observability surface.
+Summary: all P0/P1/P2 backlog items below are implemented and tested. Remaining
+work is out-of-scope (diagnostics workstation) and external (RIS-side SWF,
+Weasis client software).
 
 ## B) Executable backlog (priority ordered)
 
 ### P0 - must-have for clinical go-live
-- [ ] B1  Visible-string safety: full pass to make all on-disk UTF-8 (no BOM,
-         no mojibake) via authoritative .NET write; audit Services/*.cs + git
-         baseline.  AC: build 0/0, tests stay green, `git status` clean.
-- [ ] B2  Storage Commitment failure visibility: dead-letter + TTL for
-         committed queue.  AC: a failed SC never silently vanishes; it is
-         visible/retryable with expiry and reseat.
-- [ ] B3  Concurrency proof: shared DICOM client pool (Lazy/Queue-based
-         clients, not one static), backpressure, and a load test (N
-         concurrent C-STORE SCUs e.g. 8/16/32) recorded.  AC: at 32 concurrent
-         no space/idle-timeout corruption; test artifact committed.
-  Ref: currently "single static DicomClient" (d523b12d08) - see service.
+- [x] B1  Visible-string safety: repo-wide encoding audit (no BOM, no mojibake);
+         build 0/0, tests green.
+- [x] B2  Storage Commitment failure visibility: NotificationStatus/Attempts/
+         LastError/RemoteHost/Port/ExpireTime/ReferencedInstances; repository
+         list/filter + purge; StorageCommitmentController (list/detail/repush/
+         purge-expired); startup TTL cleanup; StorageCommitmentNotifier.
+- [x] B3  Concurrency proof: per-destination/request DICOM clients (no static);
+         ConcurrencyLoadTests at 8/16/32 concurrent C-STORE (all success, no
+         loss/corruption).
 
 ### P1 - should-have shortly after go-live
-- [ ] B4  QIDO/WADO auth consistency: ensure QIDO-RS equally behind auth
-         (WADO already is).  AC: both WADO and QIDO require login by default.
-- [ ] B5  IHE SWF/MWF walk-through test: MWL -> MPPS -> C-STORE -> QR full
-         chain as one integration test with real modalities roles.
-         AC: automated test simulating full order-to-archive flow.
-- [ ] B6  Transcode coverage: add JPEG2000-lossless and JPEG-LS into
-         transcode-tests; verify negotiator falls back safely.
-         AC: tests for both syntaxes, fallback = implicit VR little endian.
-- [ ] B7  Metrics + alerting: prometheus-style counters (scp acks, failures,
-         queue depth, retries) + summary endpoint.  AC: counters exported via
-         HTTP, a health/metrics check in CI.
+- [x] B4  QIDO/WADO auth consistency: both behind /api|/dicomweb auth;
+         AuthProtectionTests covers QIDO study/series/instances/metadata + WADO.
+- [x] B5  IHE SWF/MWF walk-through: IheSwfWorkflowTests full chain.
+- [x] B6  Transcode coverage: TranscodeTests (JPEG2000-lossless, JPEG-LS-lossless
+         round-trip) + negotiation fallback to Implicit VR Little Endian.
+- [x] B7  Metrics + alerting: DicomMetrics counters/gauges + /api/Metrics
+         (Prometheus text) + /api/Metrics/summary + anonymous /health.
 
 ### P2 - specialist / nice-to-have
-- [ ] B8  SR: add StructuredReport SOP class storage + retrieval (C-STORE +
-         C-FIND by modifier).  AC: ARS SR stored/retrieved, tested.
-- [ ] B9  KOS: Key Object Selection, C-STORE + C-FIND.  AC: KOS stored/queryable.
-- [ ] B10 Basic Grayscale Print SCP (or full print workflow).  AC: BMP/grayscale
-         page accepted, listed, acknowledged.
-- [ ] B11 RT import (RTSTRUCT/RTDOSE/RTPlan) at least as object storage
-         (accept + store + list).  AC: RT series C-STORE accepted with no error.
-- [ ] B12 Reference/Response: config doc for hospital integration (AE title
-         sheet, ports 11110-11118, auth policy).  AC: doc exists in repo.
+- [x] B8  SR: SOP whitelist, validation, content tree, image references, KOS,
+         generation, concept/code query keys, time fields, STOW-RS/C-GET/SC.
+- [x] B9  KOS: Key Object Selection stored/queryable + key-image links.
+- [x] B10 Basic Grayscale Print SCP: film session/box/image box flow accepted,
+         persisted, listed (PrintWorkflowTests).
+- [x] B11 RT import: RTSTRUCT/RTDOSE/RTPlan/RTSet/RTImage whitelist + storage/list.
+- [x] B12 Config doc: docs/hospital-integration.md (AE/ports/auth/endpoints).
 
 ## C) Always-commandable proof of base state
 ```
-HEAD/clean tree        = 1237646fc3   (split merged & pushed; local == origin/master)
+HEAD/clean tree        = local == origin/master (worktree clean)
 dotnet build           = 0 errors / 0 warnings
-dotnet test (Release)  = 112 passed / 0 failed  (net8.0, real-SCU drills)
+dotnet test (Release)  = 163 unit + 40 integration passed / 0 failed  (net8.0, real-SCU drills)
 ```
+
+## D) Viewer / OHIF
+- Primary viewer: OHIF (wwwroot/dicomviewer) wired to local /dicomweb (QIDO/WADO/
+  STOW/metadata/frames/rendered/thumbnail); legacy Cornerstone viewer retired.
+- Weasis: external client, one-time study-scoped token via /api/Weasis/token.
+- Browser smoke: tools/ohif-smoke/smoke.mjs (CDP; data-path PASS). Visual render
+  confirmation requires a display environment.
