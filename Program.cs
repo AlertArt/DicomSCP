@@ -129,6 +129,7 @@ builder.Services.AddSingleton<IStoreSCU, StoreSCU>();
 builder.Services.AddSingleton<IMwlScu, MwlScu>();
 builder.Services.AddSingleton<IPrintSCU, PrintSCU>();
 builder.Services.AddSingleton<LoginAttemptLimiter>();
+builder.Services.AddSingleton<WeasisTokenService>();
 
 // 确保配置服务正确注册
 builder.Services.Configure<DicomSettings>(builder.Configuration.GetSection("DicomSettings"));
@@ -319,6 +320,7 @@ app.UseAuthorization();
 app.UseCors("AppCors");  // CORS 应该在这里
 
 // 7. 认证中间件（保护 API + DICOM 数据端点）
+var weasisTokens = app.Services.GetRequiredService<WeasisTokenService>();
 app.Use(async (context, next) =>
 {
     var path = context.Request.Path.Value?.ToLower();
@@ -331,8 +333,12 @@ app.Use(async (context, next) =>
 
     if (requiresAuth && context.User.Identity?.IsAuthenticated != true)
     {
-        context.Response.StatusCode = 401;
-        return;
+        // 外部 Weasis 客户端无法携带会话 Cookie：允许携带有效一次性令牌的请求
+        if (!IsWeasisTokenAuthorized(context, weasisTokens))
+        {
+            context.Response.StatusCode = 401;
+            return;
+        }
     }
 
     // 默认口令未修改时，除改密/登出/会话查询外的受限端点一律拒绝，
@@ -355,6 +361,30 @@ app.Use(async (context, next) =>
 
     await next();
 });
+
+// Weasis 令牌授权：仅对 /viewer/weasis 与 /wado 生效，令牌需与研究匹配。
+static bool IsWeasisTokenAuthorized(HttpContext context, WeasisTokenService tokens)
+{
+    var path = context.Request.Path.Value?.ToLower() ?? string.Empty;
+    var isWeasisManifest = path.StartsWith("/viewer/weasis");
+    var isWado = path.StartsWith("/wado");
+    if (!isWeasisManifest && !isWado)
+    {
+        return false;
+    }
+
+    var token = context.Request.Query["token"].ToString();
+    if (string.IsNullOrEmpty(token))
+    {
+        return false;
+    }
+
+    var studyUid = isWeasisManifest
+        ? path.Substring("/viewer/weasis/".Length)
+        : context.Request.Query["studyUID"].ToString();
+
+    return tokens.Validate(token, studyUid);
+}
 
 // 8. 控制器
 app.MapControllers();

@@ -64,6 +64,10 @@
 
 主查看器为 OHIF（`/dicomviewer`），直连上述标准端点。
 
+Weasis（可选外部客户端）：外部进程无法携带会话 Cookie，需先登录调用
+`GET /api/Weasis/token?studyInstanceUid=…` 获取绑定研究的一次性令牌，再用返回的
+`weasisUrl`（manifest 与 `/wado` 均带 `token`）打开；令牌 10 分钟有效且限定该研究。
+
 ## 5. 存储与数据库
 
 ```json
@@ -88,6 +92,7 @@
 | `GET /api/Print` | 打印任务列表 |
 | `GET /api/Sr/{sop}/content` · `/{sop}/references` · `/referencing/{sop}` | SR 内容树 / 报告→图像 / 图像→报告 |
 | `GET /api/Sr/key-objects?studyInstanceUid=…` | 关键对象选择（KOS）列表 |
+| `GET /api/Weasis/token?studyInstanceUid=…` | 签发绑定研究的一次性令牌（10 分钟），供外部 Weasis 免会话访问 |
 
 ## 7. 对接步骤清单
 

@@ -14,7 +14,7 @@ public class ViewerController(DicomRepository repository) : ControllerBase
     private readonly DicomRepository _repository = repository;
 
     [HttpGet("weasis/{studyInstanceUid}")]
-    public async Task<IActionResult> GetWeasisManifest(string studyInstanceUid)
+    public async Task<IActionResult> GetWeasisManifest(string studyInstanceUid, [FromQuery] string? token = null)
     {
         try
         {
@@ -35,7 +35,7 @@ public class ViewerController(DicomRepository repository) : ControllerBase
             manifest.Add(new XAttribute(XNamespace.Xmlns + "xsi", xsi));
 
             var arcQuery = new XElement(ns + "arcQuery",
-                new XAttribute("additionnalParameters", ""),
+                new XAttribute("additionnalParameters", string.IsNullOrEmpty(token) ? "" : $"token={token}"),
                 new XAttribute("arcId", "1001"),
                 new XAttribute("baseUrl", $"{baseUrl}/wado"),
                 new XAttribute("requireOnlySOPInstanceUID", "false")

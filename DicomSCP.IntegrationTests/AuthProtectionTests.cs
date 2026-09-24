@@ -16,6 +16,9 @@ public class AuthProtectionTests
 
     [Theory]
     [InlineData("/dicomweb/studies")]
+    [InlineData("/dicomweb/studies/1.2.3/series")]
+    [InlineData("/dicomweb/studies/1.2.3/series/1.2.3/instances")]
+    [InlineData("/dicomweb/studies/1.2.3/metadata")]
     [InlineData("/wado?requestType=WADO&studyUID=x&seriesUID=x&objectUID=x")]
     [InlineData("/viewer/ohif/1.2.3")]
     [InlineData("/viewer/weasis/1.2.3")]

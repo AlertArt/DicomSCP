@@ -463,16 +463,22 @@ function formatDate(dateStr) {
 }
 
 // 添加打开Weasis的函数
-function openWeasis(studyUid, event) {
+async function openWeasis(studyUid, event) {
     try {
         if (event) {
             event.stopPropagation();
         }
 
-        const baseUrl = `${window.location.protocol}//${window.location.host}`;
-        const manifestUrl = `${baseUrl}/viewer/weasis/${studyUid}`;
-        const weasisUrl = `weasis://?$dicom:get -w "${manifestUrl}"`;
-        
+        // 通过后端签发绑定研究的一次性令牌，外部 Weasis 免会话访问 manifest 与 /wado
+        const tokenResp = await fetch(`/api/Weasis/token?studyInstanceUid=${encodeURIComponent(studyUid)}`, {
+            headers: { 'Accept': 'application/json' }
+        });
+        if (!tokenResp.ok) {
+            throw new Error('token HTTP ' + tokenResp.status);
+        }
+        const tokenData = await tokenResp.json();
+        const weasisUrl = tokenData.weasisUrl;
+
         console.log('Opening Weasis URL:', weasisUrl);
 
         // 创建并点击隐藏的链接
@@ -482,7 +488,7 @@ function openWeasis(studyUid, event) {
         link.rel = 'noopener noreferrer';
         document.body.appendChild(link);
         link.click();
-        
+
         // 延迟移除链接
         setTimeout(() => {
             document.body.removeChild(link);
